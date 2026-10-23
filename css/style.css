@@ -1,0 +1,671 @@
+﻿/* ============================================================
+   TPA IronMan Dashboard – style.css
+   Dark-Mode Sport-Optik mit CSS Custom Properties
+   ============================================================ */
+
+/* ── Google Fonts ─────────────────────────────────────────── */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Barlow+Condensed:wght@400;600;700;800&display=swap");
+
+/* ── Design Tokens ────────────────────────────────────────── */
+:root {
+  /* Farben */
+  --clr-bg:          #0a0c12;
+  --clr-surface:     #111420;
+  --clr-surface-2:   #181c2e;
+  --clr-border:      #252a40;
+  --clr-accent:      #e8391e;       /* Ironman-Rot */
+  --clr-accent-glow: rgba(232, 57, 30, 0.25);
+  --clr-accent-2:    #f97316;       /* Orange für Sekundär */
+  --clr-blue:        #3b82f6;
+  --clr-green:       #22c55e;
+  --clr-text:        #e2e8f0;
+  --clr-text-muted:  #64748b;
+  --clr-text-dim:    #94a3b8;
+
+  /* Typografie */
+  --font-body:       "Inter", system-ui, sans-serif;
+  --font-display:    "Barlow Condensed", sans-serif;
+
+  /* Abstände */
+  --radius-sm:       6px;
+  --radius-md:       12px;
+  --radius-lg:       20px;
+  --radius-xl:       28px;
+
+  /* Schatten / Glows */
+  --shadow-card:     0 4px 24px rgba(0, 0, 0, 0.4);
+  --shadow-accent:   0 0 32px var(--clr-accent-glow);
+
+  /* Übergänge */
+  --transition:      all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Reset & Base ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family:      var(--font-body);
+  background-color: var(--clr-bg);
+  color:            var(--clr-text);
+  min-height:       100vh;
+  line-height:      1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--clr-surface); }
+::-webkit-scrollbar-thumb { background: var(--clr-border); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--clr-accent); }
+
+/* ── Utility ──────────────────────────────────────────────── */
+.hidden { display: none !important; }
+.text-muted { color: var(--clr-text-muted); }
+.text-accent { color: var(--clr-accent); }
+.text-green { color: var(--clr-green); }
+.text-blue { color: var(--clr-blue); }
+
+/* ============================================================
+   LOGIN SCREEN
+   ============================================================ */
+#login-screen {
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  min-height:      100vh;
+  padding:         2rem;
+  /* Subtiles Hintergrund-Muster */
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(232, 57, 30, 0.15), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(59, 130, 246, 0.08), transparent);
+}
+
+.login-card {
+  background:    var(--clr-surface);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-xl);
+  padding:       3rem 2.5rem;
+  width:         100%;
+  max-width:     420px;
+  box-shadow:    var(--shadow-card), var(--shadow-accent);
+  animation:     slideUp 0.5s ease-out;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.login-logo {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.login-logo .logo-icon {
+  font-size:    3.5rem;
+  line-height:  1;
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+.login-logo h1 {
+  font-family: var(--font-display);
+  font-size:   2rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--clr-text);
+}
+
+.login-logo h1 span { color: var(--clr-accent); }
+
+.login-logo p {
+  color:     var(--clr-text-muted);
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+/* Formular */
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-group label {
+  display:       block;
+  font-size:     0.8125rem;
+  font-weight:   500;
+  color:         var(--clr-text-dim);
+  margin-bottom: 0.5rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.form-group input {
+  width:            100%;
+  background:       var(--clr-surface-2);
+  border:           1px solid var(--clr-border);
+  border-radius:    var(--radius-sm);
+  padding:          0.75rem 1rem;
+  color:            var(--clr-text);
+  font-family:      var(--font-body);
+  font-size:        0.9375rem;
+  transition:       var(--transition);
+  outline:          none;
+}
+
+.form-group input:focus {
+  border-color: var(--clr-accent);
+  box-shadow:   0 0 0 3px var(--clr-accent-glow);
+}
+
+.form-group input::placeholder { color: var(--clr-text-muted); }
+
+/* Fehler-Meldung */
+#login-error {
+  background:    rgba(232, 57, 30, 0.1);
+  border:        1px solid rgba(232, 57, 30, 0.3);
+  border-radius: var(--radius-sm);
+  padding:       0.75rem 1rem;
+  color:         #fca5a5;
+  font-size:     0.875rem;
+  margin-bottom: 1.25rem;
+}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  gap:             0.5rem;
+  padding:         0.75rem 1.5rem;
+  border:          none;
+  border-radius:   var(--radius-sm);
+  font-family:     var(--font-body);
+  font-size:       0.9375rem;
+  font-weight:     600;
+  cursor:          pointer;
+  transition:      var(--transition);
+  text-decoration: none;
+  white-space:     nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor:  not-allowed;
+}
+
+/* Primary (Rot) */
+.btn-primary {
+  background:  var(--clr-accent);
+  color:       #fff;
+  width:       100%;
+  letter-spacing: 0.03em;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background:  #c9321a;
+  box-shadow:  var(--shadow-accent);
+  transform:   translateY(-1px);
+}
+
+/* Secondary */
+.btn-secondary {
+  background:  var(--clr-surface-2);
+  color:       var(--clr-text);
+  border:      1px solid var(--clr-border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background:  var(--clr-border);
+  transform:   translateY(-1px);
+}
+
+/* Strava Orange */
+.btn-strava {
+  background: linear-gradient(135deg, #fc4c02, #e34402);
+  color: #fff;
+}
+
+.btn-strava:hover:not(:disabled) {
+  background: linear-gradient(135deg, #e34402, #c73b02);
+  transform:  translateY(-1px);
+  box-shadow: 0 0 20px rgba(252, 76, 2, 0.3);
+}
+
+/* AI / Gemini */
+.btn-ai {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+}
+
+.btn-ai:hover:not(:disabled) {
+  background:  linear-gradient(135deg, #5a6fd8, #6a4292);
+  transform:   translateY(-1px);
+  box-shadow:  0 0 20px rgba(102, 126, 234, 0.35);
+}
+
+/* Logout */
+.btn-logout {
+  background:  transparent;
+  color:       var(--clr-text-muted);
+  border:      1px solid var(--clr-border);
+  font-size:   0.8125rem;
+  padding:     0.5rem 1rem;
+}
+
+.btn-logout:hover {
+  border-color: var(--clr-accent);
+  color:        var(--clr-accent);
+}
+
+/* ============================================================
+   DASHBOARD – LAYOUT
+   ============================================================ */
+#dashboard {
+  min-height:    100vh;
+  display:       flex;
+  flex-direction: column;
+}
+
+/* ── Top-Navigation ──────────────────────────────────────── */
+.navbar {
+  display:        flex;
+  align-items:    center;
+  justify-content: space-between;
+  padding:        1rem 2rem;
+  background:     var(--clr-surface);
+  border-bottom:  1px solid var(--clr-border);
+  position:       sticky;
+  top:            0;
+  z-index:        100;
+  backdrop-filter: blur(10px);
+}
+
+.navbar-brand {
+  display:     flex;
+  align-items: center;
+  gap:         0.75rem;
+}
+
+.navbar-brand .brand-icon { font-size: 1.75rem; }
+
+.navbar-brand h2 {
+  font-family: var(--font-display);
+  font-size:   1.375rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.navbar-brand h2 span { color: var(--clr-accent); }
+
+.navbar-right {
+  display:     flex;
+  align-items: center;
+  gap:         1rem;
+}
+
+.user-badge {
+  display:       flex;
+  align-items:   center;
+  gap:           0.5rem;
+  background:    var(--clr-surface-2);
+  border:        1px solid var(--clr-border);
+  border-radius: 99px;
+  padding:       0.375rem 0.875rem;
+  font-size:     0.875rem;
+}
+
+.user-badge .avatar {
+  width:           28px;
+  height:          28px;
+  border-radius:   50%;
+  background:      var(--clr-accent);
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  font-size:       0.75rem;
+  font-weight:     700;
+}
+
+/* ── Main Content ─────────────────────────────────────────── */
+.dashboard-main {
+  flex:    1;
+  padding: 2rem;
+  max-width: 1400px;
+  margin:  0 auto;
+  width:   100%;
+}
+
+/* Grid: 2 Spalten auf großen Screens */
+.dashboard-grid {
+  display:               grid;
+  grid-template-columns: 1fr 1fr;
+  gap:                   1.5rem;
+  align-items:           start;
+}
+
+@media (max-width: 1024px) {
+  .dashboard-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Cards / Panels ───────────────────────────────────────── */
+.card {
+  background:    var(--clr-surface);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-lg);
+  padding:       1.75rem;
+  box-shadow:    var(--shadow-card);
+  transition:    var(--transition);
+}
+
+.card:hover { border-color: rgba(232, 57, 30, 0.3); }
+
+.card-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  margin-bottom:   1.5rem;
+  padding-bottom:  1rem;
+  border-bottom:   1px solid var(--clr-border);
+}
+
+.card-title {
+  display:     flex;
+  align-items: center;
+  gap:         0.625rem;
+}
+
+.card-title .icon {
+  font-size:     1.25rem;
+  line-height:   1;
+}
+
+.card-title h3 {
+  font-family:    var(--font-display);
+  font-size:      1.125rem;
+  font-weight:    700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── Strava Stats ─────────────────────────────────────────── */
+.stats-grid {
+  display:               grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap:                   1rem;
+  margin-bottom:         1.5rem;
+}
+
+.stat-box {
+  background:    var(--clr-surface-2);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+  padding:       1rem;
+  text-align:    center;
+  transition:    var(--transition);
+}
+
+.stat-box:hover {
+  border-color: var(--clr-accent);
+  transform:    translateY(-2px);
+}
+
+.stat-box .stat-value {
+  font-family:  var(--font-display);
+  font-size:    1.75rem;
+  font-weight:  700;
+  color:        var(--clr-accent);
+  line-height:  1;
+  margin-bottom: 0.25rem;
+}
+
+.stat-box .stat-label {
+  font-size: 0.75rem;
+  color:     var(--clr-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.stat-box .stat-sub {
+  font-size:   0.8125rem;
+  color:       var(--clr-text-dim);
+  margin-top:  0.125rem;
+}
+
+/* Aktivitätsliste */
+.activities-list { display: flex; flex-direction: column; gap: 0.625rem; }
+
+.activity-item {
+  display:         flex;
+  align-items:     center;
+  gap:             0.875rem;
+  padding:         0.75rem 1rem;
+  background:      var(--clr-surface-2);
+  border:          1px solid var(--clr-border);
+  border-radius:   var(--radius-sm);
+  transition:      var(--transition);
+}
+
+.activity-item:hover { border-color: var(--clr-accent); background: rgba(232, 57, 30, 0.04); }
+
+.activity-icon {
+  font-size:   1.375rem;
+  flex-shrink: 0;
+  width:       2.25rem;
+  text-align:  center;
+}
+
+.activity-info { flex: 1; min-width: 0; }
+
+.activity-name {
+  font-weight:   600;
+  font-size:     0.9375rem;
+  white-space:   nowrap;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+}
+
+.activity-meta {
+  font-size: 0.8125rem;
+  color:     var(--clr-text-muted);
+  margin-top: 0.125rem;
+}
+
+.activity-distance {
+  font-family: var(--font-display);
+  font-size:   1rem;
+  font-weight: 700;
+  color:       var(--clr-accent);
+  flex-shrink: 0;
+}
+
+/* Strava Connect-Bereich */
+.strava-connect {
+  text-align:    center;
+  padding:       2rem;
+  border:        2px dashed var(--clr-border);
+  border-radius: var(--radius-md);
+}
+
+.strava-connect p {
+  color:         var(--clr-text-muted);
+  margin-bottom: 1rem;
+  font-size:     0.9375rem;
+}
+
+/* ── Trainingsplan ────────────────────────────────────────── */
+.week-grid {
+  display:               grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap:                   0.5rem;
+  margin-bottom:         1.5rem;
+}
+
+@media (max-width: 768px) {
+  .week-grid { grid-template-columns: 1fr; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.day-card {
+  background:    var(--clr-surface-2);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+  padding:       0.875rem 0.75rem;
+  text-align:    center;
+  transition:    var(--transition);
+  cursor:        default;
+}
+
+.day-card.today {
+  border-color: var(--clr-accent);
+  background:   rgba(232, 57, 30, 0.06);
+  box-shadow:   0 0 16px var(--clr-accent-glow);
+}
+
+.day-card.rest { opacity: 0.5; }
+
+.day-card .day-name {
+  font-size:      0.6875rem;
+  font-weight:    600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color:          var(--clr-text-muted);
+  margin-bottom:  0.375rem;
+}
+
+.day-card .day-icon { font-size: 1.375rem; margin-bottom: 0.25rem; }
+
+.day-card .day-type {
+  font-size:   0.75rem;
+  font-weight: 600;
+  color:       var(--clr-text);
+}
+
+.day-card .day-duration {
+  font-size:   0.6875rem;
+  color:       var(--clr-text-muted);
+  margin-top:  0.125rem;
+}
+
+/* AI-Bereich */
+.ai-panel {
+  background:    var(--clr-surface-2);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+  padding:       1.25rem;
+  margin-top:    1rem;
+}
+
+.ai-panel p {
+  font-size:     0.875rem;
+  color:         var(--clr-text-muted);
+  margin-bottom: 1rem;
+  line-height:   1.5;
+}
+
+/* AI Spinner / Status */
+#ai-status {
+  padding:       0.75rem 1rem;
+  background:    rgba(102, 126, 234, 0.08);
+  border:        1px solid rgba(102, 126, 234, 0.2);
+  border-radius: var(--radius-sm);
+  font-size:     0.875rem;
+  color:         #a5b4fc;
+  margin-top:    0.875rem;
+  display:       flex;
+  align-items:   center;
+  gap:           0.5rem;
+}
+
+.spinner {
+  width:              16px;
+  height:             16px;
+  border:             2px solid rgba(165, 180, 252, 0.3);
+  border-top-color:   #a5b4fc;
+  border-radius:      50%;
+  animation:          spin 0.8s linear infinite;
+  flex-shrink:        0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Plan Last-Updated Badge ─────────────────────────────── */
+.plan-meta {
+  font-size:   0.8125rem;
+  color:       var(--clr-text-muted);
+  display:     flex;
+  align-items: center;
+  gap:         0.375rem;
+}
+
+/* ── Loading Skeleton ─────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg,
+    var(--clr-surface-2) 25%,
+    var(--clr-border) 50%,
+    var(--clr-surface-2) 75%);
+  background-size: 400% 100%;
+  animation:       shimmer 1.5s ease-in-out infinite;
+  border-radius:   var(--radius-sm);
+  height:          1rem;
+}
+
+@keyframes shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* ── Toast-Benachrichtigungen ─────────────────────────────── */
+#toast-container {
+  position:       fixed;
+  bottom:         1.5rem;
+  right:          1.5rem;
+  z-index:        9999;
+  display:        flex;
+  flex-direction: column;
+  gap:            0.625rem;
+}
+
+.toast {
+  background:    var(--clr-surface);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+  padding:       0.875rem 1.25rem;
+  font-size:     0.875rem;
+  box-shadow:    var(--shadow-card);
+  animation:     toastIn 0.3s ease-out;
+  max-width:     320px;
+}
+
+.toast.success { border-color: var(--clr-green); color: var(--clr-green); }
+.toast.error   { border-color: var(--clr-accent); color: #fca5a5; }
+.toast.info    { border-color: var(--clr-blue); color: #93c5fd; }
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Footer ───────────────────────────────────────────────── */
+.dashboard-footer {
+  text-align:    center;
+  padding:       1.25rem;
+  border-top:    1px solid var(--clr-border);
+  color:         var(--clr-text-muted);
+  font-size:     0.8125rem;
+}
+
+/* ── Responsive ───────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .navbar { padding: 1rem; }
+  .dashboard-main { padding: 1rem; }
+  .login-card { padding: 2rem 1.5rem; }
+  .navbar-brand h2 { font-size: 1.125rem; }
+}

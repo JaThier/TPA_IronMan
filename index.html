@@ -1,0 +1,214 @@
+﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- SEO -->
+  <title>TPA IronMan – Trainings Dashboard</title>
+  <meta name="description" content="Persönliches Ironman-Trainings-Dashboard fuer das TPA-Team. Strava-Sync, KI-Trainingsplaene und Fortschritts-Tracking." />
+  <meta name="theme-color" content="#0a0c12" />
+
+  <!-- Favicon (Emoji als SVG) -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏊</text></svg>" />
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ══════════════════════════════════════════════════════════
+       LOGIN SCREEN
+       Wird ausgeblendet, sobald Firebase-Auth bestaetigt ist.
+  ══════════════════════════════════════════════════════════ -->
+  <section id="login-screen" aria-label="Anmeldebereich">
+    <div class="login-card">
+
+      <!-- Logo / Header -->
+      <div class="login-logo">
+        <span class="logo-icon" aria-hidden="true">🏊‍♂️🚴‍♂️🏃‍♂️</span>
+        <h1>TPA <span>Iron</span>Man</h1>
+        <p>Training Dashboard fuer die Crew</p>
+      </div>
+
+      <!-- Fehlermeldung (initial versteckt) -->
+      <div id="login-error" class="hidden" role="alert" aria-live="assertive"></div>
+
+      <!-- Login-Formular -->
+      <form id="login-form" novalidate>
+        <div class="form-group">
+          <label for="login-email">E-Mail</label>
+          <input
+            type="email"
+            id="login-email"
+            name="email"
+            placeholder="athlete@example.com"
+            autocomplete="email"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="login-password">Passwort</label>
+          <input
+            type="password"
+            id="login-password"
+            name="password"
+            placeholder="••••••••"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+
+        <button type="submit" id="login-btn" class="btn btn-primary">
+          Einloggen
+        </button>
+      </form>
+
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════
+       DASHBOARD
+       Wird erst nach erfolgreichem Login sichtbar.
+  ══════════════════════════════════════════════════════════ -->
+  <div id="dashboard" class="hidden" aria-label="Training Dashboard">
+
+    <!-- ── Navigation ──────────────────────────────────────── -->
+    <header class="navbar" role="banner">
+      <div class="navbar-brand">
+        <span class="brand-icon" aria-hidden="true">🏊‍♂️</span>
+        <h2>TPA <span>Iron</span>Man</h2>
+      </div>
+
+      <div class="navbar-right">
+        <!-- Benutzer-Badge -->
+        <div class="user-badge" aria-label="Angemeldeter Benutzer">
+          <div class="avatar" id="user-avatar" aria-hidden="true">?</div>
+          <span id="user-email" aria-live="polite">–</span>
+        </div>
+
+        <!-- Logout -->
+        <button id="logout-btn" class="btn btn-logout" aria-label="Ausloggen">
+          Ausloggen
+        </button>
+      </div>
+    </header>
+
+    <!-- ── Haupt-Inhalt ─────────────────────────────────────── -->
+    <main class="dashboard-main" id="main-content">
+
+      <div class="dashboard-grid">
+
+        <!-- ════════════════════════════════════════════════════
+             BEREICH 1: Strava Synchronisation & Statistiken
+        ════════════════════════════════════════════════════ -->
+        <section class="card" aria-labelledby="strava-title">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="icon" aria-hidden="true">🚴</span>
+              <h3 id="strava-title">Strava Aktivitaeten</h3>
+            </div>
+            <!-- Strava-Verbindungs-Status -->
+            <span id="strava-status" class="plan-meta text-muted" aria-live="polite"></span>
+          </div>
+
+          <!-- Strava-Inhalt (wird per JS befuellt) -->
+          <div id="strava-content" aria-live="polite">
+            <!-- Initial: Skeleton-Loader wird per JS eingefuegt -->
+            <div style="display:flex;align-items:center;gap:0.75rem;padding:2rem;color:var(--clr-text-muted);">
+              <div class="spinner"></div>
+              <span>Lade Strava-Daten…</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- ════════════════════════════════════════════════════
+             BEREICH 2: Aktueller Trainingsplan
+        ════════════════════════════════════════════════════ -->
+        <section class="card" aria-labelledby="plan-title">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="icon" aria-hidden="true">📋</span>
+              <h3 id="plan-title">Wochentrainingsplan</h3>
+            </div>
+            <!-- Plan-Metadaten (KI-Datum etc.) -->
+            <span id="plan-meta" class="plan-meta" aria-live="polite"></span>
+          </div>
+
+          <!-- 7-Tage-Wochen-Grid (wird per JS befuellt) -->
+          <div
+            id="week-plan-grid"
+            class="week-grid"
+            role="list"
+            aria-label="Wochentrainingsplan"
+            aria-live="polite"
+          >
+            <!-- Skeleton-Loader -->
+            <div class="day-card"><div class="skeleton" style="height:60px;"></div></div>
+            <div class="day-card"><div class="skeleton" style="height:60px;"></div></div>
+            <div class="day-card"><div class="skeleton" style="height:60px;"></div></div>
+            <div class="day-card"><div class="skeleton" style="height:60px;"></div></div>
+            <div class="day-card"><div class="skeleton" style="height:60px;"></div></div>
+            <div class="day-card"><div class="skeleton" style="height:60px;"></div></div>
+            <div class="day-card"><div class="skeleton" style="height:60px;"></div></div>
+          </div>
+
+          <!-- Coach-Notiz (nach KI-Generierung) -->
+          <div id="coach-note-box" class="hidden" style="
+            background: rgba(102,126,234,0.08);
+            border: 1px solid rgba(102,126,234,0.2);
+            border-radius: var(--radius-sm);
+            padding: 0.875rem 1rem;
+            font-size: 0.875rem;
+            color: #a5b4fc;
+            margin-bottom: 1rem;
+          ">
+            <strong style="display:block;margin-bottom:0.25rem;">💬 Coach-Empfehlung</strong>
+            <span id="coach-note"></span>
+          </div>
+
+          <!-- KI-Anpassungs-Bereich -->
+          <div class="ai-panel">
+            <p>
+              Lass die KI deinen Trainingsplan auf Basis deiner letzten Strava-Aktivitaeten
+              und des aktuellen Plans optimieren. Beruecksichtigt Erholung, Belastungssteuerung
+              und progressive Ueberlastung.
+            </p>
+
+            <button
+              id="ai-adjust-btn"
+              class="btn btn-ai"
+              aria-label="Trainingsplan von KI anpassen lassen"
+            >
+              🤖 Plan von KI anpassen lassen
+            </button>
+
+            <!-- KI-Status (Ladeindikator, initial versteckt) -->
+            <div id="ai-status" class="hidden" role="status" aria-live="polite"></div>
+          </div>
+
+        </section>
+
+      </div>
+    </main>
+
+    <!-- ── Footer ───────────────────────────────────────────── -->
+    <footer class="dashboard-footer" role="contentinfo">
+      <p>TPA IronMan Dashboard &bull; Powered by Firebase, Strava &amp; Gemini AI</p>
+    </footer>
+
+  </div>
+
+  <!-- ── Toast-Container ──────────────────────────────────── -->
+  <div id="toast-container" aria-live="assertive" aria-atomic="true"></div>
+
+  <!-- ══════════════════════════════════════════════════════════
+       JavaScript – ES Modules
+       auth.js ist der Einstiegspunkt und laedt andere Module
+       dynamisch nach erfolgreichem Login.
+  ══════════════════════════════════════════════════════════ -->
+  <script type="module" src="js/auth.js"></script>
+
+</body>
+</html>

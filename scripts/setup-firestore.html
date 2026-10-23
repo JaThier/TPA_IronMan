@@ -1,0 +1,231 @@
+﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>TPA IronMan – Firestore Setup</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0a0c12;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    .card {
+      background: #111420;
+      border: 1px solid #252a40;
+      border-radius: 16px;
+      padding: 2.5rem;
+      width: 100%;
+      max-width: 600px;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    h1 span { color: #e8391e; }
+    .subtitle { color: #64748b; font-size: 0.875rem; margin-bottom: 2rem; }
+    .section { margin-bottom: 1.5rem; }
+    label { display: block; font-size: 0.8rem; color: #94a3b8; margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    input {
+      width: 100%; background: #181c2e; border: 1px solid #252a40;
+      border-radius: 6px; padding: 0.65rem 0.875rem; color: #e2e8f0;
+      font-size: 0.9rem; outline: none; margin-bottom: 1rem;
+    }
+    input:focus { border-color: #e8391e; }
+    button {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.7rem 1.5rem; border: none; border-radius: 6px;
+      font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+    }
+    .btn-primary { background: #e8391e; color: #fff; width: 100%; justify-content: center; }
+    .btn-primary:hover { background: #c9321a; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .log {
+      background: #0a0c12; border: 1px solid #252a40; border-radius: 8px;
+      padding: 1rem; margin-top: 1.5rem; font-family: monospace; font-size: 0.8rem;
+      max-height: 280px; overflow-y: auto; display: none;
+    }
+    .log-entry { padding: 0.2rem 0; }
+    .log-entry.ok   { color: #22c55e; }
+    .log-entry.err  { color: #f87171; }
+    .log-entry.info { color: #94a3b8; }
+    .log-entry.warn { color: #fb923c; }
+    .done-banner {
+      background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3);
+      border-radius: 8px; padding: 1rem 1.25rem; margin-top: 1.5rem;
+      color: #4ade80; font-size: 0.875rem; display: none;
+    }
+    .divider { border: none; border-top: 1px solid #252a40; margin: 1.5rem 0; }
+    .warning {
+      background: rgba(251,146,60,0.08); border: 1px solid rgba(251,146,60,0.25);
+      border-radius: 6px; padding: 0.75rem 1rem; font-size: 0.8rem; color: #fb923c;
+      margin-bottom: 1.5rem;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>TPA <span>Iron</span>Man</h1>
+  <p class="subtitle">Einmaliges Firestore-Setup &mdash; nach Ausführung löschbar</p>
+
+  <div class="warning">
+    ⚠️ Diese Seite ist nur für das initiale Setup gedacht.
+    Lösche <code>scripts/setup-firestore.html</code> nach dem Ausführen
+    oder committe sie nicht ins Repo.
+  </div>
+
+  <!-- Login -->
+  <div id="step-login" class="section">
+    <label>E-Mail (Firebase Admin-Konto)</label>
+    <input type="email" id="s-email" placeholder="admin@example.com" />
+    <label>Passwort</label>
+    <input type="password" id="s-password" placeholder="••••••••" />
+    <label>Strava Client-ID</label>
+    <input type="text" id="s-strava-id" placeholder="12345" />
+    <label>Strava Client-Secret</label>
+    <input type="text" id="s-strava-secret" placeholder="abc..." />
+    <label>Gemini API Key</label>
+    <input type="text" id="s-gemini-key" placeholder="AIza..." />
+    <button class="btn-primary" id="run-btn" onclick="runSetup()">
+      🚀 Firestore-Struktur erstellen
+    </button>
+  </div>
+
+  <!-- Log-Ausgabe -->
+  <div class="log" id="log"></div>
+  <div class="done-banner" id="done-banner">
+    ✅ Setup abgeschlossen! Du kannst diese Datei jetzt löschen.
+  </div>
+</div>
+
+<script type="module">
+// ── Firebase Imports ────────────────────────────────────────
+import { initializeApp }      from "https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword }
+                               from "https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js";
+import {
+  getFirestore, doc, setDoc, collection, addDoc, serverTimestamp,
+} from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
+
+// ── Firebase Init ───────────────────────────────────────────
+const firebaseConfig = {
+  apiKey:            "AIzaSyBvGIG0rqbrSLomi9YYbgO9IePK5YOoqvA",
+  authDomain:        "tpaironman.firebaseapp.com",
+  projectId:         "tpaironman",
+  storageBucket:     "tpaironman.firebasestorage.app",
+  messagingSenderId: "474787007011",
+  appId:             "1:474787007011:web:5f48096ace3559845f7f96",
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+
+// ── Log-Hilfsfunktionen ─────────────────────────────────────
+const logEl = document.getElementById("log");
+function log(msg, type = "info") {
+  logEl.style.display = "block";
+  const el = document.createElement("div");
+  el.className = `log-entry ${type}`;
+  el.textContent = `${type === "ok" ? "✓" : type === "err" ? "✗" : type === "warn" ? "⚠" : "→"} ${msg}`;
+  logEl.appendChild(el);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ── Trainingsplan-Beispiel ──────────────────────────────────
+const EXAMPLE_WEEK_PLAN = {
+  monday:    { type: "swim",  duration: 60,  intensity: "moderate", description: "Dauerschwimmen 2.000m im GA1-Bereich" },
+  tuesday:   { type: "run",   duration: 75,  intensity: "easy",     description: "Langer lockerer Dauerlauf" },
+  wednesday: { type: "ride",  duration: 90,  intensity: "moderate", description: "Radausfahrt mit Intervallen" },
+  thursday:  { type: "rest",  duration: 0,   intensity: "easy",     description: "Aktive Erholung / Dehnen" },
+  friday:    { type: "swim",  duration: 45,  intensity: "hard",     description: "Technikeinheit + Sprints" },
+  saturday:  { type: "brick", duration: 180, intensity: "moderate", description: "Lange Radtour + 20min Laufen direkt danach" },
+  sunday:    { type: "run",   duration: 120, intensity: "easy",     description: "Langer Sonntagslauf (LSD)" },
+};
+
+// ── Haupt-Setup-Funktion ────────────────────────────────────
+window.runSetup = async function () {
+  const btn         = document.getElementById("run-btn");
+  const email       = document.getElementById("s-email").value.trim();
+  const password    = document.getElementById("s-password").value;
+  const stravaId    = document.getElementById("s-strava-id").value.trim();
+  const stravaSecret = document.getElementById("s-strava-secret").value.trim();
+  const geminiKey   = document.getElementById("s-gemini-key").value.trim();
+
+  // Validierung
+  if (!email || !password) { log("E-Mail und Passwort sind Pflicht.", "err"); return; }
+  if (!stravaId || !stravaSecret || !geminiKey) {
+    log("Bitte alle API-Keys ausfüllen.", "err"); return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Erstelle Struktur…";
+  log("Starte Setup…");
+
+  try {
+    // ── 1. Einloggen ──────────────────────────────────────
+    log("Logge ein mit " + email + "…");
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    const uid  = cred.user.uid;
+    log("Eingeloggt als UID: " + uid, "ok");
+
+    // ── 2. config/secrets ────────────────────────────────
+    log("Erstelle config/secrets…");
+    await setDoc(doc(db, "config", "secrets"), {
+      stravaClientId:     stravaId,
+      stravaClientSecret: stravaSecret,
+      geminiApiKey:       geminiKey,
+      createdAt:          new Date().toISOString(),
+    });
+    log("config/secrets angelegt", "ok");
+
+    // ── 3. users/{uid}/profile ───────────────────────────
+    log("Erstelle users/" + uid + "/profile…");
+    await setDoc(doc(db, "users", uid, "profile", "main"), {
+      email:              cred.user.email,
+      stravaConnected:    false,
+      stravaAthleteId:    null,
+      createdAt:          new Date().toISOString(),
+    });
+    log("users/" + uid + "/profile/main angelegt", "ok");
+
+    // ── 4. users/{uid}/cache/activities (leer) ───────────
+    log("Erstelle Aktivitäten-Cache-Dokument…");
+    await setDoc(doc(db, "users", uid, "cache", "activities"), {
+      data:      [],
+      updatedAt: new Date().toISOString(),
+    });
+    log("users/" + uid + "/cache/activities angelegt", "ok");
+
+    // ── 5. Beispiel-Trainingsplan ────────────────────────
+    log("Erstelle Beispiel-Trainingsplan…");
+    const planRef = collection(db, "users", uid, "trainingPlans");
+    const planDoc = await addDoc(planRef, {
+      ownerId:     uid,
+      createdAt:   new Date().toISOString(),
+      aiGenerated: false,
+      coachNote:   "Dies ist dein Starter-Trainingsplan. Passe ihn via KI an deine aktuellen Daten an!",
+      weekPlan:    EXAMPLE_WEEK_PLAN,
+    });
+    log("Trainingsplan angelegt (ID: " + planDoc.id + ")", "ok");
+
+    // ── Fertig ───────────────────────────────────────────
+    log("", "info");
+    log("Firestore-Struktur vollständig erstellt!", "ok");
+    log("Du kannst diese Datei jetzt löschen.", "warn");
+
+    document.getElementById("done-banner").style.display = "block";
+    btn.textContent = "✅ Fertig!";
+
+  } catch (err) {
+    log("Fehler: " + err.message, "err");
+    console.error(err);
+    btn.disabled    = false;
+    btn.textContent = "🚀 Firestore-Struktur erstellen";
+  }
+};
+</script>
+</body>
+</html>

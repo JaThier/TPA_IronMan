@@ -51,20 +51,49 @@ Firebase SDK Version: **13.1.0**
 
 ### 3. Firestore-Sicherheitsregeln setzen
 
+In der Firebase Console → Firestore → Regeln:
+
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Benutzer-spezifische Daten: nur der jeweilige User darf lesen/schreiben
     match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // Trainingspläne: alle Auth-User lesen, nur Eigentümer schreiben
     match /trainingPlans/{planId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == resource.data.ownerId;
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null
+                   && request.auth.uid == resource.data.ownerId;
     }
+
+    // App-Secrets: alle Auth-User dürfen lesen, NIEMAND schreibt vom Client
+    // (Befüllen nur via Firebase Console oder Admin SDK)
+    match /config/{document} {
+      allow read:  if request.auth != null;
+      allow write: if false;
+    }
+
   }
 }
 ```
+
+### 4. Secrets in Firestore ablegen (einmalig via Firebase Console)
+
+Firebase Console → Firestore → Sammlung `config` → Dokument `secrets`:
+
+| Feld                | Wert                      |
+|---------------------|---------------------------|
+| `stravaClientId`    | `(deine Strava Client-ID)`|
+| `stravaClientSecret`| `(dein Strava Secret)`    |
+| `geminiApiKey`      | `(dein Gemini API Key)`   |
+
+> **Sicherheit:** Dieses Dokument ist durch die Firestore-Rules nur für
+> eingeloggte Benutzer lesbar und kann vom Client nie überschrieben werden
+> (`allow write: if false`).
 
 ### 4. Strava App anlegen
 

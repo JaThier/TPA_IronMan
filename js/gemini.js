@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // js/gemini.js
 // Gemini API – KI-gestützter Trainingsplan Generator
 // ============================================================
@@ -11,17 +11,22 @@
 // ============================================================
 
 import { db }              from "./firebase-config.js";
+import { getSecrets }      from "./config.js";
 import {
   doc, getDoc, setDoc, collection, addDoc, query, orderBy, limit, getDocs,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast }       from "./ui-helpers.js";
 
-// ──────────────────────────────────────────────────────────
-// 🔧 HIER DEINEN GEMINI API KEY EINTRAGEN
-// ──────────────────────────────────────────────────────────
-const GEMINI_API_KEY    = "DEIN_GEMINI_API_KEY";
-const GEMINI_MODEL      = "gemini-1.5-flash";  // Free Tier – schnell + kostenlos
-const GEMINI_API_URL    = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+// ── Gemini-Konstanten ──────────────────────────────────────
+// API-Key wird zur Laufzeit aus Firestore geladen (config/secrets → geminiApiKey).
+// ✅ Kein Secret im Quellcode.
+const GEMINI_MODEL = "gemini-1.5-flash";  // Free Tier – schnell + kostenlos
+
+/** Gibt die vollständige Gemini-API-URL mit Key zurück. */
+function getGeminiUrl() {
+  const { geminiApiKey } = getSecrets();
+  return `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiApiKey}`;
+}
 
 // ── Zustand ────────────────────────────────────────────────
 let currentUser = null;
@@ -99,8 +104,12 @@ async function loadCachedActivities() {
  * Hauptfunktion: Sendet Kontext an Gemini und speichert den neuen Plan.
  */
 async function adjustPlanWithAI() {
-  if (GEMINI_API_KEY === "DEIN_GEMINI_API_KEY") {
-    showToast("Gemini API Key noch nicht konfiguriert.", "error");
+  // Prüfen ob Secrets verfügbar sind
+  let geminiUrl;
+  try {
+    geminiUrl = getGeminiUrl();
+  } catch (err) {
+    showToast("Secrets nicht geladen – bitte erst einloggen.", "error");
     return;
   }
 
@@ -116,7 +125,7 @@ async function adjustPlanWithAI() {
 
     // Gemini API aufrufen
     showAiStatus("🧠 Gemini generiert deinen Plan…");
-    const newPlanJSON = await callGeminiAPI(prompt);
+    const newPlanJSON = await callGeminiAPI(prompt, geminiUrl);
 
     // Plan parsen und validieren
     const newPlan = parsePlanResponse(newPlanJSON);
@@ -198,9 +207,10 @@ Antworte NUR mit einem validen JSON-Objekt (kein Markdown, keine Erklärungen):
 /**
  * Sendet den Prompt an die Gemini REST API.
  * @param {string} prompt
+ * @param {string} apiUrl  - Vollständige Gemini-URL mit Key
  * @returns {string} Roh-Antwort von Gemini
  */
-async function callGeminiAPI(prompt) {
+async function callGeminiAPI(prompt, apiUrl) {
   const requestBody = {
     contents: [{
       parts: [{ text: prompt }]
@@ -218,7 +228,7 @@ async function callGeminiAPI(prompt) {
     ],
   };
 
-  const response = await fetch(GEMINI_API_URL, {
+  const response = await fetch(apiUrl, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify(requestBody),

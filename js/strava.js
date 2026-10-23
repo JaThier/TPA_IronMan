@@ -1,39 +1,39 @@
-﻿// ============================================================
+// ============================================================
 // js/strava.js
 // Strava OAuth 2.0 Flow & Aktivitäten-Abruf
 // ============================================================
 // SETUP:
 // 1. Erstelle eine Strava-App unter https://www.strava.com/settings/api
-// 2. Trage Client-ID und Client-Secret unten ein
-// 3. Setze die "Authorization Callback Domain" auf deine GitHub Pages Domain
-//    z.B. DEIN_USERNAME.github.io
-// 4. Da kein Backend vorhanden ist, wird das Client-Secret NICHT für den
-//    Token-Austausch verwendet – nutze stattdessen den Strava Token Exchange
-//    über einen CORS-Proxy oder speichere den Access Token nach manuellem
-//    ersten Login in Firestore.
-// ⚠️  Hinweis: Für ein vollständig sicheres Token-Handling ist ein Backend
-//     (z.B. Firebase Cloud Functions) empfohlen.
+// 2. Lege die Authorization Callback Domain auf deine GitHub Pages Domain fest
+// 3. Speichere stravaClientId + stravaClientSecret in Firestore:
+//    Firebase Console → Firestore → config → secrets
+// ✅ Kein Secret im Quellcode – wird erst nach Login aus Firestore geladen.
 // ============================================================
 
 import { db }              from "./firebase-config.js";
+import { getSecrets }      from "./config.js";
 import {
-  doc, getDoc, setDoc, updateDoc
+  doc, getDoc, setDoc,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast }       from "./ui-helpers.js";
 
-// ──────────────────────────────────────────────────────────
-// 🔧 HIER DEINE STRAVA APP-DATEN EINTRAGEN
-// ──────────────────────────────────────────────────────────
-const STRAVA_CONFIG = {
-  clientId:     "DEINE_STRAVA_CLIENT_ID",
-  // ⚠️ Client-Secret gehört eigentlich in ein Backend!
-  // Nur akzeptabel, da App hinter Firebase-Auth liegt.
-  clientSecret: "DEIN_STRAVA_CLIENT_SECRET",
-  redirectUri:  window.location.origin + window.location.pathname,
-  scope:        "read,activity:read",
-};
+// ── Strava-Konstanten ──────────────────────────────────────
+// Client-ID und Client-Secret werden zur Laufzeit aus Firestore geladen.
+// (config/secrets → stravaClientId, stravaClientSecret)
+const STRAVA_REDIRECT_URI = window.location.origin + window.location.pathname;
+const STRAVA_SCOPE        = "read,activity:read";
+const STRAVA_API_BASE     = "https://www.strava.com/api/v3";
 
-const STRAVA_API_BASE = "https://www.strava.com/api/v3";
+/** Gibt die Strava-Config mit Secrets zurück (nach loadSecrets()). */
+function getStravaConfig() {
+  const s = getSecrets();
+  return {
+    clientId:     s.stravaClientId,
+    clientSecret: s.stravaClientSecret,
+    redirectUri:  STRAVA_REDIRECT_URI,
+    scope:        STRAVA_SCOPE,
+  };
+}
 
 // ── Zustand ────────────────────────────────────────────────
 let currentUser = null;
@@ -75,18 +75,21 @@ export async function initStrava(user) {
 
 /** Startet den Strava OAuth-Redirect */
 export function connectToStrava() {
-  if (STRAVA_CONFIG.clientId === "DEINE_STRAVA_CLIENT_ID") {
-    showToast("Strava Client-ID noch nicht konfiguriert.", "error");
+  let cfg;
+  try {
+    cfg = getStravaConfig();
+  } catch (err) {
+    showToast("Secrets nicht geladen – bitte erst einloggen.", "error");
     return;
   }
 
   const params = new URLSearchParams({
-    client_id:     STRAVA_CONFIG.clientId,
-    redirect_uri:  STRAVA_CONFIG.redirectUri,
-    response_type: "code",
+    client_id:       cfg.clientId,
+    redirect_uri:    cfg.redirectUri,
+    response_type:   "code",
     approval_prompt: "auto",
-    scope:         STRAVA_CONFIG.scope,
-    state:         "strava_oauth",
+    scope:           cfg.scope,
+    state:           "strava_oauth",
   });
 
   window.location.href = `https://www.strava.com/oauth/authorize?${params}`;
@@ -101,12 +104,13 @@ async function handleStravaCallback(code) {
   showStravaLoading("Verbinde mit Strava…");
 
   try {
+    const cfg      = getStravaConfig();
     const response = await fetch("https://www.strava.com/oauth/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        client_id:     STRAVA_CONFIG.clientId,
-        client_secret: STRAVA_CONFIG.clientSecret,
+        client_id:     cfg.clientId,
+        client_secret: cfg.clientSecret,
         code,
         grant_type:    "authorization_code",
       }),
@@ -173,12 +177,13 @@ async function getValidAccessToken() {
 
   // Token erneuern
   console.log("Strava Access Token abgelaufen – erneuere…");
+  const cfg      = getStravaConfig();
   const response = await fetch("https://www.strava.com/oauth/token", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      client_id:     STRAVA_CONFIG.clientId,
-      client_secret: STRAVA_CONFIG.clientSecret,
+      client_id:     cfg.clientId,
+      client_secret: cfg.clientSecret,
       grant_type:    "refresh_token",
       refresh_token: stravaTokens.refreshToken,
     }),

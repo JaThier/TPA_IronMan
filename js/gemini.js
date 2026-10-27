@@ -10,12 +10,64 @@ import {
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast }       from "./ui-helpers.js";
 
-// ── Gemini-Konstanten ──────────────────────────────────────
-const GEMINI_MODEL = "gemini-1.5-flash";  // Free Tier – schnell + kostenlos
+// ── Gemini-Konstanten & Modell-Prioritäten ──────────────────
+const PREFERRED_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash-latest",
+  "gemini-1.5-flash-002",
+  "gemini-1.5-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-1.5-pro",
+];
 
-function getGeminiUrl() {
-  const { geminiApiKey } = getSecrets();
-  return `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiApiKey}`;
+let cachedWorkingModel = null;
+
+/**
+ * Ermittelt dynamisch das beste verfügbare Modell via ModelService.ListModels.
+ */
+async function getBestAvailableModel(apiKey) {
+  if (cachedWorkingModel) return cachedWorkingModel;
+
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    if (res.ok) {
+      const data = await res.json();
+      const available = (data.models || [])
+        .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
+        .map(m => m.name.replace(/^models\//, ""));
+
+      console.log("[gemini] Verfügbare Modelle für API-Key:", available);
+
+      for (const pref of PREFERRED_MODELS) {
+        if (available.includes(pref)) {
+          cachedWorkingModel = pref;
+          console.log(`[gemini] Wähle Modell: ${pref}`);
+          return pref;
+        }
+      }
+
+      const flashModel = available.find(m => m.includes("flash"));
+      if (flashModel) {
+        cachedWorkingModel = flashModel;
+        console.log(`[gemini] Wähle alternatives Flash-Modell: ${flashModel}`);
+        return flashModel;
+      }
+
+      if (available.length > 0) {
+        cachedWorkingModel = available[0];
+        console.log(`[gemini] Wähle erstes verfügbares Modell: ${available[0]}`);
+        return available[0];
+      }
+    } else {
+      console.warn("[gemini] Konnte Modell-Liste nicht abrufen (HTTP " + res.status + ")");
+    }
+  } catch (err) {
+    console.warn("[gemini] Fehler beim Ermitteln der Modell-Liste:", err);
+  }
+
+  // Standard-Fallback, falls ListModels fehlschlägt
+  return "gemini-2.0-flash";
 }
 
 // ── Zustand ────────────────────────────────────────────────
@@ -180,9 +232,11 @@ async function loadCachedActivities() {
 
 // ── KI-Plan generieren ─────────────────────────────────────
 async function adjustPlanWithAI() {
-  let geminiUrl;
+  let geminiApiKey;
   try {
-    geminiUrl = getGeminiUrl();
+    const secrets = getSecrets();
+    geminiApiKey = secrets?.geminiApiKey;
+    if (!geminiApiKey) throw new Error("Kein Gemini API-Key vorhanden.");
   } catch (err) {
     showToast("Secrets nicht geladen – bitte erst einloggen.", "error");
     return;
@@ -208,7 +262,7 @@ async function adjustPlanWithAI() {
 
     // 3. Gemini API aufrufen
     showAiStatus("🧠 Gemini erstellt deinen personalisierten Trainingsplan…");
-    const newPlanJSON = await callGeminiAPI(prompt, geminiUrl);
+    const newPlanJSON = await callGeminiAPI(prompt, geminiApiKey);
 
     // 4. Plan parsen und validieren
     const newPlan = parsePlanResponse(newPlanJSON);
@@ -288,7 +342,10 @@ Antworte AUSSCHLIESSLICH mit einem validen JSON-Objekt ohne Markdown-Codeblöcke
 }
 
 // ── Gemini API Call ────────────────────────────────────────
-async function callGeminiAPI(prompt, geminiUrl) {
+async function callGeminiAPI(prompt, apiKey) {
+  const model = await getBestAvailableModel(apiKey);
+  console.log(`[gemini] Sende Request an Modell: ${model}`);
+
   const payload = {
     contents: [
       {
@@ -301,11 +358,35 @@ async function callGeminiAPI(prompt, geminiUrl) {
     }
   };
 
-  const response = await fetch(geminiUrl, {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  let response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
+
+  // Falls das gewählte Modell 404 liefert, Fallback-Kette durchprobieren
+  if (!response.ok && response.status === 404) {
+    console.warn(`[gemini] Modell ${model} schlug mit 404 fehl, durchsuche Fallback-Modelle...`);
+    cachedWorkingModel = null;
+
+    for (const fallbackModel of PREFERRED_MODELS) {
+      if (fallbackModel === model) continue;
+      const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/${fallbackModel}:generateContent?key=${apiKey}`;
+      const fallbackRes = await fetch(fallbackUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (fallbackRes.ok) {
+        console.log(`[gemini] Erfolgreich auf Fallback-Modell ${fallbackModel} ausgewichen.`);
+        cachedWorkingModel = fallbackModel;
+        response = fallbackRes;
+        break;
+      }
+    }
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));

@@ -3,39 +3,39 @@
 // Strava OAuth 2.0 Flow, Aktivitäten-Abruf & Master-Detail Ansicht
 // ============================================================
 
-import { db }              from "./firebase-config.js";
-import { getSecrets }      from "./config.js";
+import { db } from "./firebase-config.js";
+import { getSecrets } from "./config.js";
 import {
   doc, getDoc, setDoc,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
-import { showToast }       from "./ui-helpers.js";
+import { showToast } from "./ui-helpers.js";
 import { publishUserStatsToHub } from "./hub.js";
 
 // ── Strava-Konstanten ──────────────────────────────────────
 const STRAVA_REDIRECT_URI = window.location.origin + window.location.pathname;
-const STRAVA_SCOPE        = "read,activity:read";
-const STRAVA_API_BASE     = "https://www.strava.com/api/v3";
+const STRAVA_SCOPE = "read,activity:read";
+const STRAVA_API_BASE = "https://www.strava.com/api/v3";
 
 /** Gibt die Strava-Config mit Secrets zurück (nach loadSecrets()). */
 function getStravaConfig() {
   const s = getSecrets();
   return {
-    clientId:     s.stravaClientId,
+    clientId: s.stravaClientId,
     clientSecret: s.stravaClientSecret,
-    redirectUri:  STRAVA_REDIRECT_URI,
-    scope:        STRAVA_SCOPE,
+    redirectUri: STRAVA_REDIRECT_URI,
+    scope: STRAVA_SCOPE,
   };
 }
 
 // ── Zustand ────────────────────────────────────────────────
-let currentUser         = null;
-let stravaTokens        = null;
-let allActivities       = [];
-let filteredActivities  = [];
-let selectedActivityId  = null;
-let currentFilterSport  = "all";
-let currentSearchQuery  = "";
-let syncDaysSetting     = 30; // Standard: 30 Tage
+let currentUser = null;
+let stravaTokens = null;
+let allActivities = [];
+let filteredActivities = [];
+let selectedActivityId = null;
+let currentFilterSport = "all";
+let currentSearchQuery = "";
+let syncDaysSetting = 30; // Standard: 30 Tage
 let detailChartInstance = null;
 
 // ── Initialisierung ────────────────────────────────────────
@@ -45,8 +45,8 @@ export async function initStrava(user) {
 
   // Prüfe ob wir gerade vom Strava-OAuth-Callback kommen
   const urlParams = new URLSearchParams(window.location.search);
-  const code      = urlParams.get("code");
-  const state     = urlParams.get("state");
+  const code = urlParams.get("code");
+  const state = urlParams.get("state");
 
   if (code && state === "strava_oauth") {
     window.history.replaceState({}, document.title, window.location.pathname);
@@ -62,10 +62,12 @@ export async function initStrava(user) {
     const cached = await loadCachedActivities();
     if (cached.length > 0) {
       allActivities = cached;
+      window.stravaActivities = allActivities;
+      window.stravaTokens = stravaTokens;
       selectedActivityId = allActivities[0]?.id || null;
       renderActivitiesView();
       // Im Hintergrund Hub synchronisieren
-      publishUserStatsToHub(allActivities, stravaTokens);
+      await publishUserStatsToHub(allActivities, stravaTokens);
     } else {
       await fetchAndDisplayActivities(syncDaysSetting);
     }
@@ -85,12 +87,12 @@ export function connectToStrava() {
   }
 
   const params = new URLSearchParams({
-    client_id:       cfg.clientId,
-    redirect_uri:    cfg.redirectUri,
-    response_type:   "code",
+    client_id: cfg.clientId,
+    redirect_uri: cfg.redirectUri,
+    response_type: "code",
     approval_prompt: "auto",
-    scope:           cfg.scope,
-    state:           "strava_oauth",
+    scope: cfg.scope,
+    state: "strava_oauth",
   });
 
   window.location.href = `https://www.strava.com/oauth/authorize?${params}`;
@@ -100,15 +102,15 @@ async function handleStravaCallback(code) {
   showStravaLoading("Verbinde mit Strava…");
 
   try {
-    const cfg      = getStravaConfig();
+    const cfg = getStravaConfig();
     const response = await fetch("https://www.strava.com/oauth/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        client_id:     cfg.clientId,
+        client_id: cfg.clientId,
         client_secret: cfg.clientSecret,
         code,
-        grant_type:    "authorization_code",
+        grant_type: "authorization_code",
       }),
     });
 
@@ -117,11 +119,11 @@ async function handleStravaCallback(code) {
     const data = await response.json();
 
     stravaTokens = {
-      accessToken:  data.access_token,
+      accessToken: data.access_token,
       refreshToken: data.refresh_token,
-      expiresAt:    data.expires_at,
-      athleteId:    data.athlete?.id,
-      athleteName:  data.athlete ? `${data.athlete.firstname} ${data.athlete.lastname}` : "Strava Athlet",
+      expiresAt: data.expires_at,
+      athleteId: data.athlete?.id,
+      athleteName: data.athlete ? `${data.athlete.firstname} ${data.athlete.lastname}` : "Strava Athlet",
       athleteProfile: data.athlete?.profile || null,
     };
 
@@ -139,10 +141,11 @@ async function handleStravaCallback(code) {
 // ── Token-Management ───────────────────────────────────────
 async function loadStravaTokens() {
   try {
-    const ref  = doc(db, "users", currentUser.uid, "profile", "strava");
+    const ref = doc(db, "users", currentUser.uid, "profile", "strava");
     const snap = await getDoc(ref);
     if (snap.exists()) {
       stravaTokens = snap.data();
+      window.stravaTokens = stravaTokens;
     }
   } catch (err) {
     console.error("Fehler beim Laden der Strava-Tokens:", err);
@@ -162,14 +165,14 @@ async function getValidAccessToken() {
   }
 
   console.log("Strava Access Token abgelaufen – erneuere…");
-  const cfg      = getStravaConfig();
+  const cfg = getStravaConfig();
   const response = await fetch("https://www.strava.com/oauth/token", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      client_id:     cfg.clientId,
+      client_id: cfg.clientId,
       client_secret: cfg.clientSecret,
-      grant_type:    "refresh_token",
+      grant_type: "refresh_token",
       refresh_token: stravaTokens.refreshToken,
     }),
   });
@@ -177,9 +180,9 @@ async function getValidAccessToken() {
   if (!response.ok) throw new Error("Token-Refresh fehlgeschlagen");
 
   const data = await response.json();
-  stravaTokens.accessToken  = data.access_token;
+  stravaTokens.accessToken = data.access_token;
   stravaTokens.refreshToken = data.refresh_token;
-  stravaTokens.expiresAt    = data.expires_at;
+  stravaTokens.expiresAt = data.expires_at;
 
   await saveStravaTokens(stravaTokens);
   return stravaTokens.accessToken;
@@ -222,6 +225,8 @@ export async function fetchAndDisplayActivities(days = syncDaysSetting) {
     }
 
     allActivities = fetched;
+    window.stravaActivities = allActivities;
+    window.stravaTokens = stravaTokens;
     if (allActivities.length > 0) {
       selectedActivityId = allActivities[0].id;
     }
@@ -249,15 +254,15 @@ export async function fetchAndDisplayActivities(days = syncDaysSetting) {
 async function cacheActivities(activities) {
   const ref = doc(db, "users", currentUser.uid, "cache", "activities");
   await setDoc(ref, {
-    data:      activities,
+    data: activities,
     updatedAt: new Date().toISOString(),
-    syncDays:  syncDaysSetting,
+    syncDays: syncDaysSetting,
   });
 }
 
 async function loadCachedActivities() {
   try {
-    const ref  = doc(db, "users", currentUser.uid, "cache", "activities");
+    const ref = doc(db, "users", currentUser.uid, "cache", "activities");
     const snap = await getDoc(ref);
     if (snap.exists()) {
       return snap.data().data || [];
@@ -276,13 +281,13 @@ export function renderActivitiesView() {
   // Filter anwenden
   applyFilters();
 
-  const totalKm    = allActivities.reduce((s, a) => s + (a.distance || 0), 0) / 1000;
+  const totalKm = allActivities.reduce((s, a) => s + (a.distance || 0), 0) / 1000;
   const totalHours = allActivities.reduce((s, a) => s + (a.moving_time || 0), 0) / 3600;
   const totalCount = allActivities.length;
 
   const swimKm = allActivities.filter(a => a.type === "Swim").reduce((s, a) => s + (a.distance || 0), 0) / 1000;
   const bikeKm = allActivities.filter(a => a.type === "Ride").reduce((s, a) => s + (a.distance || 0), 0) / 1000;
-  const runKm  = allActivities.filter(a => a.type === "Run").reduce((s, a) => s + (a.distance || 0), 0) / 1000;
+  const runKm = allActivities.filter(a => a.type === "Run").reduce((s, a) => s + (a.distance || 0), 0) / 1000;
 
   container.innerHTML = `
     <!-- ── Synchronisations-Toolbar ──────────────────────── -->
@@ -298,11 +303,11 @@ export function renderActivitiesView() {
             <option value="90"  ${syncDaysSetting === 90 ? 'selected' : ''}>Letzte 90 Tage (~3 Monate)</option>
             <option value="180" ${syncDaysSetting === 180 ? 'selected' : ''}>Letzte 6 Monate (180 Tage)</option>
             <option value="365" ${syncDaysSetting === 365 ? 'selected' : ''}>Letztes Jahr (365 Tage)</option>
-            <option value="custom" ${![7,14,30,60,90,180,365].includes(syncDaysSetting) ? 'selected' : ''}>Benutzerdefiniert...</option>
+            <option value="custom" ${![7, 14, 30, 60, 90, 180, 365].includes(syncDaysSetting) ? 'selected' : ''}>Benutzerdefiniert...</option>
           </select>
 
           <!-- Benutzerdefinierte Eingabe (falls 'custom') -->
-          <div id="custom-sync-inputs" class="custom-inputs ${[7,14,30,60,90,180,365].includes(syncDaysSetting) ? 'hidden' : ''}">
+          <div id="custom-sync-inputs" class="custom-inputs ${[7, 14, 30, 60, 90, 180, 365].includes(syncDaysSetting) ? 'hidden' : ''}">
             <input type="number" id="custom-sync-val" min="1" max="730" value="${syncDaysSetting}" class="form-input-sm" />
             <select id="custom-sync-unit" class="form-select-sm">
               <option value="days" selected>Tage</option>

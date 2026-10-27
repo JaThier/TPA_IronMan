@@ -9,18 +9,18 @@ import {
   onAuthStateChanged,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js";
 
-import { auth }                    from "./firebase-config.js";
+import { auth } from "./firebase-config.js";
 import { loadSecrets, clearSecrets } from "./config.js";
-import { showToast }               from "./ui-helpers.js";
+import { showToast } from "./ui-helpers.js";
 
 // ── DOM-Referenzen ─────────────────────────────────────────
-const loginScreen  = document.getElementById("login-screen");
-const dashboard    = document.getElementById("dashboard");
-const loginForm    = document.getElementById("login-form");
-const loginError   = document.getElementById("login-error");
-const loginBtn     = document.getElementById("login-btn");
-const logoutBtn    = document.getElementById("logout-btn");
-const userEmailEl  = document.getElementById("user-email");
+const loginScreen = document.getElementById("login-screen");
+const dashboard = document.getElementById("dashboard");
+const loginForm = document.getElementById("login-form");
+const loginError = document.getElementById("login-error");
+const loginBtn = document.getElementById("login-btn");
+const logoutBtn = document.getElementById("logout-btn");
+const userEmailEl = document.getElementById("user-email");
 const userAvatarEl = document.getElementById("user-avatar");
 
 let currentTab = "activities";
@@ -68,7 +68,7 @@ async function initApp(user) {
 // ── Tab-Navigation ─────────────────────────────────────────
 export function initTabNavigation() {
   const tabs = document.querySelectorAll(".nav-tab");
-  
+
   // URL Hash auswerten (z.B. #plan, #hub, #account)
   const initialHash = window.location.hash.replace("#", "");
   if (["activities", "plan", "hub", "account"].includes(initialHash)) {
@@ -112,12 +112,9 @@ export function switchTab(tabName) {
     view.classList.toggle("hidden", !isTarget);
   });
 
-  // Falls zum Hub gewechselt wird, Daten synchronisieren und aktualisieren
+  // Falls zum Hub gewechselt wird, Daten aktualisieren
   if (tabName === "hub") {
-    import("./hub.js").then(async (m) => {
-      await m.syncOwnStatsFromCache();
-      await m.loadAndRenderHub();
-    });
+    import("./hub.js").then(m => m.loadAndRenderHub());
   }
 }
 
@@ -125,7 +122,7 @@ export function switchTab(tabName) {
 loginForm?.addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  const email    = document.getElementById("login-email").value.trim();
+  const email = document.getElementById("login-email").value.trim();
   const password = document.getElementById("login-password").value;
 
   setLoginLoading(true);
@@ -156,7 +153,7 @@ function showDashboard(user) {
   dashboard.classList.remove("hidden");
   setLoginLoading(false);
 
-  if (userEmailEl)  userEmailEl.textContent = user.email;
+  if (userEmailEl) userEmailEl.textContent = user.email;
   if (userAvatarEl) userAvatarEl.textContent = user.email.charAt(0).toUpperCase();
 }
 
@@ -168,7 +165,7 @@ function showLoginScreen() {
 
 function setLoginLoading(loading) {
   if (!loginBtn) return;
-  loginBtn.disabled    = loading;
+  loginBtn.disabled = loading;
   loginBtn.textContent = loading ? "Einloggen…" : "Einloggen";
 }
 
@@ -184,12 +181,12 @@ function hideLoginError() {
 
 function getReadableAuthError(code) {
   const errors = {
-    "auth/invalid-email":          "Ungültige E-Mail-Adresse.",
-    "auth/user-disabled":          "Dieses Konto wurde deaktiviert.",
-    "auth/user-not-found":         "Kein Konto mit dieser E-Mail gefunden.",
-    "auth/wrong-password":         "Falsches Passwort.",
-    "auth/invalid-credential":     "E-Mail oder Passwort falsch.",
-    "auth/too-many-requests":      "Zu viele Versuche. Bitte später nochmal.",
+    "auth/invalid-email": "Ungültige E-Mail-Adresse.",
+    "auth/user-disabled": "Dieses Konto wurde deaktiviert.",
+    "auth/user-not-found": "Kein Konto mit dieser E-Mail gefunden.",
+    "auth/wrong-password": "Falsches Passwort.",
+    "auth/invalid-credential": "E-Mail oder Passwort falsch.",
+    "auth/too-many-requests": "Zu viele Versuche. Bitte später nochmal.",
     "auth/network-request-failed": "Netzwerkfehler. Prüfe deine Verbindung.",
   };
   return errors[code] ?? `Login-Fehler (${code}). Bitte versuche es erneut.`;

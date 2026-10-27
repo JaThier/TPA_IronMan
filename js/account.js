@@ -9,7 +9,7 @@ import {
   doc, getDoc, setDoc,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast } from "./ui-helpers.js";
-import { loadAndRenderHub } from "./hub.js";
+import { loadAndRenderHub, publishUserStatsToHub } from "./hub.js";
 
 let currentUser = null;
 
@@ -154,34 +154,40 @@ export async function updateAthleteName(newName) {
   if (!user) return;
 
   // 1. Firebase Auth Profile aktualisieren
-  await updateProfile(user, {
-    displayName: newName,
-  });
+  if (auth.currentUser) {
+    await updateProfile(auth.currentUser, {
+      displayName: newName,
+    });
+  }
 
   // 2. Firestore Profil speichern
   const profileRef = doc(db, "users", user.uid, "profile", "main");
   await setDoc(profileRef, {
     displayName: newName,
-    name:        newName,
-    updatedAt:   new Date().toISOString(),
+    name: newName,
+    updatedAt: new Date().toISOString(),
   }, { merge: true });
 
-  // 3. Im Hub aktualisieren
+  // 3. Im Hub aktualisieren (inkl. UID und E-Mail)
   const hubRef = doc(db, "hub", user.uid);
   await setDoc(hubRef, {
-    uid:       user.uid,
-    name:      newName,
+    uid: user.uid,
+    name: newName,
+    email: user.email,
     updatedAt: new Date().toISOString(),
   }, { merge: true });
 
   // 4. Navbar aktualisieren
   updateNavbarUserBadge(newName, user.email);
 
-  // 5. Hub-Statistiken synchronisieren und neu rendern
-  import("./hub.js").then(async (m) => {
-    await m.syncOwnStatsFromCache();
-    await m.loadAndRenderHub();
-  });
+  // 5. Hub-Statistiken sofort mit neuem Namen synchronisieren & neu rendern
+  const acts = window.stravaActivities || [];
+  const tokens = window.stravaTokens || null;
+  if (acts.length > 0) {
+    await publishUserStatsToHub(acts, tokens);
+  } else {
+    await loadAndRenderHub();
+  }
 }
 
 /**
@@ -209,10 +215,10 @@ async function renderAccountProfile() {
     const heroEmail = document.getElementById("account-hero-email");
     const stravaBadge = document.getElementById("account-strava-badge");
 
-    if (nameInput)   nameInput.value = currentName;
-    if (emailInput)  emailInput.value = currentUser.email;
-    if (heroName)    heroName.textContent = currentName;
-    if (heroEmail)   heroEmail.textContent = currentUser.email;
+    if (nameInput) nameInput.value = currentName;
+    if (emailInput) emailInput.value = currentUser.email;
+    if (heroName) heroName.textContent = currentName;
+    if (heroEmail) heroEmail.textContent = currentUser.email;
     if (avatarLarge) avatarLarge.textContent = currentName.charAt(0).toUpperCase();
 
     // Strava-Status Badge
@@ -240,10 +246,11 @@ async function renderAccountProfile() {
 
 /** Hilfsfunktion zum Aktualisieren des Avatar/Name-Badges in der Navbar */
 export function updateNavbarUserBadge(displayName, email) {
-  const nameEl   = document.getElementById("user-email");
+  const nameEl = document.getElementById("user-email");
   const avatarEl = document.getElementById("user-avatar");
 
   const nameToShow = displayName || email?.split("@")[0] || "Athlet";
-  if (nameEl)   nameEl.textContent = nameToShow;
+  if (nameEl) nameEl.textContent = nameToShow;
   if (avatarEl) avatarEl.textContent = nameToShow.charAt(0).toUpperCase();
 }
+

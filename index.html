@@ -1,16 +1,19 @@
 <!DOCTYPE html>
 <html lang="de">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <!-- SEO -->
   <title>TPA IronMan – Trainings Dashboard</title>
-  <meta name="description" content="Persönliches Ironman-Trainings-Dashboard für das TPA-Team. Strava-Sync, KI-Trainingspläne und Team-Leistungsvergleich im Hub." />
+  <meta name="description"
+    content="Persönliches Ironman-Trainings-Dashboard für das TPA-Team. Strava-Sync, KI-Trainingspläne und Team-Leistungsvergleich im Hub." />
   <meta name="theme-color" content="#0a0c12" />
 
   <!-- Favicon (Emoji als SVG) -->
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏊</text></svg>" />
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏊</text></svg>" />
 
   <!-- Chart.js für interaktive Leistungs- und Vergleichsdiagramme -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -18,6 +21,7 @@
   <!-- CSS -->
   <link rel="stylesheet" href="css/style.css" />
 </head>
+
 <body>
 
   <!-- ══════════════════════════════════════════════════════════
@@ -41,26 +45,14 @@
       <form id="login-form" novalidate>
         <div class="form-group">
           <label for="login-email">E-Mail</label>
-          <input
-            type="email"
-            id="login-email"
-            name="email"
-            placeholder="athlete@example.com"
-            autocomplete="email"
-            required
-          />
+          <input type="email" id="login-email" name="email" placeholder="athlete@example.com" autocomplete="email"
+            required />
         </div>
 
         <div class="form-group">
           <label for="login-password">Passwort</label>
-          <input
-            type="password"
-            id="login-password"
-            name="password"
-            placeholder="••••••••"
-            autocomplete="current-password"
-            required
-          />
+          <input type="password" id="login-password" name="password" placeholder="••••••••"
+            autocomplete="current-password" required />
         </div>
 
         <button type="submit" id="login-btn" class="btn btn-primary">
@@ -144,7 +136,7 @@
            REITER 2: Trainingsplan (mit Zeitraum-Konfiguration)
       ════════════════════════════════════════════════════ -->
       <section id="view-plan" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-plan">
-        
+
         <!-- KI-Steuerungs-Panel & Analyse-Zeitraum -->
         <div class="card ai-config-card" style="margin-bottom: 1.5rem;">
           <div class="card-header">
@@ -157,8 +149,8 @@
 
           <div class="ai-config-body">
             <p class="ai-desc">
-              Konfiguriere, wie weit deine Strava-Aktivitäten für die Analyse zurückreichen sollen. 
-              Gemini analysiert dein Trainingsvolumen, deine Belastungsspitzen und Erholungsphasen aus diesem Zeitraum 
+              Konfiguriere, wie weit deine Strava-Aktivitäten für die Analyse zurückreichen sollen.
+              Gemini analysiert dein Trainingsvolumen, deine Belastungsspitzen und Erholungsphasen aus diesem Zeitraum
               und passt deinen Wochenplan dynamisch daran an.
             </p>
 
@@ -219,21 +211,29 @@
           </div>
 
           <!-- 7-Tage-Wochen-Grid (wird per JS befüllt) -->
-          <div
-            id="week-plan-grid"
-            class="week-grid"
-            role="list"
-            aria-label="Wochentrainingsplan"
-            aria-live="polite"
-          >
+          <div id="week-plan-grid" class="week-grid" role="list" aria-label="Wochentrainingsplan" aria-live="polite">
             <!-- Skeletons -->
-            <div class="day-card"><div class="skeleton" style="height:120px;"></div></div>
-            <div class="day-card"><div class="skeleton" style="height:120px;"></div></div>
-            <div class="day-card"><div class="skeleton" style="height:120px;"></div></div>
-            <div class="day-card"><div class="skeleton" style="height:120px;"></div></div>
-            <div class="day-card"><div class="skeleton" style="height:120px;"></div></div>
-            <div class="day-card"><div class="skeleton" style="height:120px;"></div></div>
-            <div class="day-card"><div class="skeleton" style="height:120px;"></div></div>
+            <div class="day-card">
+              <div class="skeleton" style="height:120px;"></div>
+            </div>
+            <div class="day-card">
+              <div class="skeleton" style="height:120px;"></div>
+            </div>
+            <div class="day-card">
+              <div class="skeleton" style="height:120px;"></div>
+            </div>
+            <div class="day-card">
+              <div class="skeleton" style="height:120px;"></div>
+            </div>
+            <div class="day-card">
+              <div class="skeleton" style="height:120px;"></div>
+            </div>
+            <div class="day-card">
+              <div class="skeleton" style="height:120px;"></div>
+            </div>
+            <div class="day-card">
+              <div class="skeleton" style="height:120px;"></div>
+            </div>
           </div>
         </div>
 
@@ -243,13 +243,14 @@
            REITER 3: Hub (Leistungsvergleich & Diagramme)
       ════════════════════════════════════════════════════ -->
       <section id="view-hub" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-hub">
-        
+
         <div class="hub-header-bar">
           <div>
             <h2 class="hub-main-title">🏆 TPA IronMan Crew Hub</h2>
-            <p class="hub-subtitle">Vergleiche deine Trainingsumfänge, Disziplinen und Fortschritte mit deinen Teamkollegen.</p>
+            <p class="hub-subtitle">Vergleiche deine Trainingsumfänge, Disziplinen und Fortschritte mit deinen
+              Teamkollegen.</p>
           </div>
-          
+
           <div class="hub-header-actions">
             <button id="demo-toggle-btn" class="btn btn-secondary">
               👥 Demo-Crew einblenden
@@ -270,68 +271,57 @@
            REITER 4: Konto & Athleten-Profil
       ════════════════════════════════════════════════════ -->
       <section id="view-account" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-account">
-        <div class="card account-card">
-          
-          <div class="card-header">
-            <div class="card-title">
-              <span class="icon" aria-hidden="true">👤</span>
-              <h3>Mein Athleten-Konto &amp; Einstellungen</h3>
-            </div>
-            <span class="plan-meta text-muted">Profilverwaltung</span>
-          </div>
+          <div class="card account-card">
 
-          <!-- Hero Profile Header -->
-          <div class="account-hero">
-            <div class="account-avatar-large" id="account-avatar-large">?</div>
-            <div class="account-hero-info">
-              <h2 id="account-hero-name" class="account-name">Lade Profil…</h2>
-              <div id="account-hero-email" class="account-email text-muted">–</div>
-              <div class="account-badges">
-                <span class="team-badge">🏊‍♂️🚴‍♂️🏃‍♂️ TPA IronMan Athlet</span>
-                <span id="account-strava-badge" class="strava-status-badge">
-                  <span class="badge-status-dot dot-gray"></span>
-                  <span>Prüfe Strava-Status…</span>
-                </span>
+            <div class="card-header">
+              <div class="card-title">
+                <span class="icon" aria-hidden="true">👤</span>
+                <h3>Mein Athleten-Konto &amp; Einstellungen</h3>
+              </div>
+              <span class="plan-meta text-muted">Profilverwaltung</span>
+            </div>
+
+            <!-- Hero Profile Header -->
+            <div class="account-hero">
+              <div class="account-avatar-large" id="account-avatar-large">?</div>
+              <div class="account-hero-info">
+                <h2 id="account-hero-name" class="account-name">Lade Profil…</h2>
+                <div id="account-hero-email" class="account-email text-muted">–</div>
+                <div class="account-badges">
+                  <span class="team-badge">🏊‍♂️🚴‍♂️🏃‍♂️ TPA IronMan Athlet</span>
+                  <span id="account-strava-badge" class="strava-status-badge">
+                    <span class="badge-status-dot dot-gray"></span>
+                    <span>Prüfe Strava-Status…</span>
+                  </span>
+                </div>
               </div>
             </div>
+
+            <!-- Formular zur Namensänderung -->
+            <form id="account-profile-form" class="account-form">
+              <div class="form-group">
+                <label for="account-name-input">Athleten-Name / Rufname (wird im Hub angezeigt)</label>
+                <input type="text" id="account-name-input" name="name" placeholder="z. B. Jakob Thier" required
+                  autocomplete="name" />
+                <span class="input-hint">Dieser Name erscheint in der Team-Rangliste, auf den Hub-Podien und in deinen
+                  Trainingsplänen.</span>
+              </div>
+
+              <div class="form-group">
+                <label for="account-email-input">E-Mail-Adresse (Login-Konto)</label>
+                <input type="email" id="account-email-input" name="email" disabled class="input-disabled" />
+                <span class="input-hint">E-Mail ist fest mit deiner Firebase-Authentifizierung verknüpft.</span>
+              </div>
+
+              <div class="account-form-actions">
+                <button type="submit" id="account-save-btn" class="btn btn-primary" style="width: auto;">
+                  💾 Änderungen speichern
+                </button>
+              </div>
+            </form>
+
           </div>
-
-          <!-- Formular zur Namensänderung -->
-          <form id="account-profile-form" class="account-form">
-            <div class="form-group">
-              <label for="account-name-input">Athleten-Name / Rufname (wird im Hub angezeigt)</label>
-              <input
-                type="text"
-                id="account-name-input"
-                name="name"
-                placeholder="z. B. Jakob Thier"
-                required
-                autocomplete="name"
-              />
-              <span class="input-hint">Dieser Name erscheint in der Team-Rangliste, auf den Hub-Podien und in deinen Trainingsplänen.</span>
-            </div>
-
-            <div class="form-group">
-              <label for="account-email-input">E-Mail-Adresse (Login-Konto)</label>
-              <input
-                type="email"
-                id="account-email-input"
-                name="email"
-                disabled
-                class="input-disabled"
-              />
-              <span class="input-hint">E-Mail ist fest mit deiner Firebase-Authentifizierung verknüpft.</span>
-            </div>
-
-            <div class="account-form-actions">
-              <button type="submit" id="account-save-btn" class="btn btn-primary" style="width: auto;">
-                💾 Änderungen speichern
-              </button>
-            </div>
-          </form>
-
-        </div>
-      </section>
+        </section>
 
     </main>
 
@@ -354,13 +344,7 @@
       <form id="onboarding-name-form" onsubmit="event.preventDefault(); window.saveOnboardingName();">
         <div class="form-group" style="margin-bottom: 1.5rem;">
           <label for="onboarding-name-input">Dein Athleten-Name / Rufname</label>
-          <input
-            type="text"
-            id="onboarding-name-input"
-            placeholder="z. B. Jakob"
-            required
-            autocomplete="name"
-          />
+          <input type="text" id="onboarding-name-input" placeholder="z. B. Jakob" required autocomplete="name" />
         </div>
 
         <button type="submit" id="onboarding-save-btn" class="btn btn-primary">
@@ -377,4 +361,5 @@
   <script type="module" src="js/auth.js"></script>
 
 </body>
+
 </html>

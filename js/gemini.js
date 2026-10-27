@@ -3,7 +3,7 @@
 // Gemini API – KI-gestützter Trainingsplan Generator mit konfigurierbarem Analyse-Zeitraum
 // ============================================================
 
-import { db }              from "./firebase-config.js";
+import { db, auth }        from "./firebase-config.js";
 import { getSecrets }      from "./config.js";
 import {
   doc, getDoc, setDoc, collection, addDoc, query, orderBy, limit, getDocs,
@@ -29,7 +29,7 @@ const WEEKDAY_DE = { monday:"Mo", tuesday:"Di", wednesday:"Mi", thursday:"Do", f
 
 // ── Initialisierung ────────────────────────────────────────
 export async function initTrainingPlan(user) {
-  currentUser = user;
+  currentUser = user || auth?.currentUser;
   renderPlanSkeleton();
 
   const plan = await loadCurrentPlan();
@@ -45,7 +45,7 @@ export async function initTrainingPlan(user) {
   document.getElementById("ai-adjust-btn")?.addEventListener("click", adjustPlanWithAI);
 
   // Vorschau-Zähler für Aktivitäten aktualisieren
-  updateActivityCountPreview();
+  await updateActivityCountPreview();
 }
 
 /** Richtet die Listener für den konfigurierbaren Analyse-Zeitraum ein */
@@ -55,12 +55,17 @@ function setupTimeframeListeners() {
   const customVal = document.getElementById("ai-custom-val");
   const customUnit = document.getElementById("ai-custom-unit");
 
+  // Initialen Wert aus dem Dropdown übernehmen falls bereits gesetzt
+  if (select && select.value !== "custom") {
+    aiTimeframeDays = parseInt(select.value, 10) || aiTimeframeDays;
+  }
+
   select?.addEventListener("change", (e) => {
     if (e.target.value === "custom") {
       customBox?.classList.remove("hidden");
     } else {
       customBox?.classList.add("hidden");
-      aiTimeframeDays = parseInt(e.target.value, 10);
+      aiTimeframeDays = parseInt(e.target.value, 10) || 30;
       updateActivityCountPreview();
     }
   });
@@ -77,29 +82,57 @@ function setupTimeframeListeners() {
 }
 
 /** Aktualisiert den Text, wie viele Aktivitäten in dem gewählten Zeitraum einbezogen werden */
-async function updateActivityCountPreview() {
+export async function updateActivityCountPreview() {
   const infoEl = document.getElementById("ai-timeframe-info");
   if (!infoEl) return;
 
-  const activities = await loadCachedActivities();
-  const cutoff = Date.now() - (aiTimeframeDays * 24 * 3600 * 1000);
-  const cutoffDateStr = new Date(cutoff).toLocaleDateString("de-DE", {
-    day: "2-digit", month: "short", year: "numeric"
-  });
+  try {
+    const select = document.getElementById("ai-timeframe-select");
+    if (select && select.value !== "custom") {
+      aiTimeframeDays = parseInt(select.value, 10) || aiTimeframeDays || 30;
+    }
 
-  const matchingActs = activities.filter(a => new Date(a.start_date).getTime() >= cutoff);
-  const totalKm = matchingActs.reduce((s, a) => s + (a.distance || 0), 0) / 1000;
+    const activities = await loadCachedActivities();
+    const cutoff = Date.now() - (aiTimeframeDays * 24 * 3600 * 1000);
+    const cutoffDateStr = new Date(cutoff).toLocaleDateString("de-DE", {
+      day: "2-digit", month: "short", year: "numeric"
+    });
 
-  infoEl.innerHTML = `
-    🔍 Es werden <strong>${matchingActs.length} Aktivitäten</strong> seit dem <strong>${cutoffDateStr}</strong> 
-    (Gesamt: ${totalKm.toFixed(1)} km) in die KI-Planung einbezogen.
-  `;
+    if (!activities || !Array.isArray(activities) || activities.length === 0) {
+      infoEl.innerHTML = `
+        ℹ️ Noch keine Aktivitäten geladen. Verbinde Strava oder synchronisiere deine Einheiten im Tab <em>Aktivitäten</em>.
+      `;
+      return;
+    }
+
+    const matchingActs = activities.filter(a => {
+      if (!a) return false;
+      const d = new Date(a.start_date || a.start_date_local || 0).getTime();
+      return !isNaN(d) && d >= cutoff;
+    });
+
+    const totalKm = matchingActs.reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
+
+    infoEl.innerHTML = `
+      🔍 Es werden <strong>${matchingActs.length} Aktivitäten</strong> seit dem <strong>${cutoffDateStr}</strong> 
+      (Gesamt: ${totalKm.toFixed(1)} km) in die KI-Planung einbezogen.
+    `;
+  } catch (err) {
+    console.error("[gemini] Fehler beim Berechnen der Aktivitäts-Vorschau:", err);
+    infoEl.innerHTML = `⚠️ Vorschau konnte nicht berechnet werden.`;
+  }
 }
+
+// Global für andere Module (z.B. strava.js) bereitstellen
+window.updateAiPreview = updateActivityCountPreview;
 
 // ── Trainingsplan aus Firestore laden ──────────────────────
 async function loadCurrentPlan() {
+  const user = currentUser || auth?.currentUser;
+  if (!user?.uid) return null;
+
   try {
-    const plansRef = collection(db, "users", currentUser.uid, "trainingPlans");
+    const plansRef = collection(db, "users", user.uid, "trainingPlans");
     const q        = query(plansRef, orderBy("createdAt", "desc"), limit(1));
     const snapshot = await getDocs(q);
 
@@ -115,11 +148,32 @@ async function loadCurrentPlan() {
 }
 
 async function loadCachedActivities() {
+  // 1. Erst in-memory Strava-Aktivitäten prüfen (aus strava.js)
+  if (Array.isArray(window.stravaActivities) && window.stravaActivities.length > 0) {
+    return window.stravaActivities;
+  }
+
+  // 2. Fallback: Aus Firestore Cache laden
+  const user = currentUser || auth?.currentUser;
+  if (!user?.uid) return [];
+
   try {
-    const ref  = doc(db, "users", currentUser.uid, "cache", "activities");
+    const ref  = doc(db, "users", user.uid, "cache", "activities");
     const snap = await getDoc(ref);
-    return snap.exists() ? snap.data().data ?? [] : [];
-  } catch {
+    if (snap.exists()) {
+      const raw = snap.data()?.data;
+      if (Array.isArray(raw)) {
+        window.stravaActivities = raw;
+        return raw;
+      } else if (raw && typeof raw === "object") {
+        const arr = Object.values(raw);
+        window.stravaActivities = arr;
+        return arr;
+      }
+    }
+    return [];
+  } catch (err) {
+    console.warn("[gemini] Konnte gecachte Aktivitäten nicht laden:", err);
     return [];
   }
 }
@@ -143,7 +197,11 @@ async function adjustPlanWithAI() {
     // 1. Aktivitäten laden und nach gewähltem Zeitraum filtern
     const allActs = await loadCachedActivities();
     const cutoff = Date.now() - (aiTimeframeDays * 24 * 3600 * 1000);
-    const filteredActs = allActs.filter(a => new Date(a.start_date).getTime() >= cutoff);
+    const filteredActs = allActs.filter(a => {
+      if (!a) return false;
+      const d = new Date(a.start_date || a.start_date_local || 0).getTime();
+      return !isNaN(d) && d >= cutoff;
+    });
 
     // 2. Prompt bauen mit den gefilterten Aktivitäten
     const prompt = buildPrompt(currentPlan, filteredActs, aiTimeframeDays);
@@ -184,11 +242,12 @@ function buildPrompt(currentPlan, activities, timeframeDays) {
   const dateStr = cutoffDate.toLocaleDateString("de-DE");
 
   const actsSummary = activities.map((a) => {
-    const km = (a.distance / 1000).toFixed(1);
-    const mins = Math.round(a.moving_time / 60);
+    const km = ((parseFloat(a.distance) || 0) / 1000).toFixed(1);
+    const mins = Math.round((parseFloat(a.moving_time) || 0) / 60);
     const hr = a.average_heartrate ? `, Ø Puls: ${Math.round(a.average_heartrate)}` : "";
     const hm = a.total_elevation_gain ? `, Höhenmeter: ↑${Math.round(a.total_elevation_gain)}m` : "";
-    return `- ${a.type} (${new Date(a.start_date_local).toLocaleDateString("de-DE")}): ${km} km, ${mins} Min${hr}${hm}`;
+    const dateStr = new Date(a.start_date_local || a.start_date || Date.now()).toLocaleDateString("de-DE");
+    return `- ${a.type || 'Aktivität'} (${dateStr}): ${km} km, ${mins} Min${hr}${hm}`;
   }).join("\n");
 
   const currentPlanStr = currentPlan?.weekPlan
@@ -278,10 +337,13 @@ function parsePlanResponse(rawText) {
 }
 
 async function savePlan(planData) {
-  const plansRef = collection(db, "users", currentUser.uid, "trainingPlans");
+  const user = currentUser || auth?.currentUser;
+  if (!user?.uid) throw new Error("Nicht eingeloggt");
+
+  const plansRef = collection(db, "users", user.uid, "trainingPlans");
   const docRef   = await addDoc(plansRef, {
     ...planData,
-    ownerId:     currentUser.uid,
+    ownerId:     user.uid,
     createdAt:   new Date().toISOString(),
     aiGenerated: true,
   });

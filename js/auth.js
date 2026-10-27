@@ -115,6 +115,8 @@ export function switchTab(tabName) {
   // Falls zum Hub gewechselt wird, Daten aktualisieren
   if (tabName === "hub") {
     import("./hub.js").then(m => m.loadAndRenderHub());
+  } else if (tabName === "plan") {
+    import("./gemini.js").then(m => m.updateActivityCountPreview?.());
   }
 }
 

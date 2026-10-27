@@ -68,6 +68,8 @@ export async function initStrava(user) {
       renderActivitiesView();
       // Im Hintergrund Hub synchronisieren
       await publishUserStatsToHub(allActivities, stravaTokens);
+      // KI-Vorschau im Trainingsplan aktualisieren
+      window.updateAiPreview?.();
     } else {
       await fetchAndDisplayActivities(syncDaysSetting);
     }
@@ -239,6 +241,8 @@ export async function fetchAndDisplayActivities(days = syncDaysSetting) {
 
     showToast(`✅ ${allActivities.length} Aktivitäten synchronisiert!`, "success");
     renderActivitiesView();
+    // KI-Vorschau im Trainingsplan aktualisieren
+    window.updateAiPreview?.();
 
   } catch (err) {
     console.error("Fehler beim Laden der Aktivitäten:", err);

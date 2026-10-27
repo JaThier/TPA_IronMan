@@ -277,6 +277,11 @@ async function loadCachedActivities() {
   return [];
 }
 
+// ── Sport-Typ Erkennung ────────────────────────────────────
+export const isBike = (a) => ["Ride", "VirtualRide", "GravelRide", "MountainBikeRide", "EBikeRide", "Handcycle"].includes(a?.type || a?.sport_type);
+export const isRun  = (a) => ["Run", "VirtualRun", "TrailRun", "Treadmill"].includes(a?.type || a?.sport_type);
+export const isSwim = (a) => ["Swim", "OpenWaterSwim"].includes(a?.type || a?.sport_type);
+
 // ── Rendering der Aktivitäten-Ansicht (Master-Detail) ──────
 export function renderActivitiesView() {
   const container = document.getElementById("strava-content");
@@ -285,13 +290,13 @@ export function renderActivitiesView() {
   // Filter anwenden
   applyFilters();
 
-  const totalKm = allActivities.reduce((s, a) => s + (a.distance || 0), 0) / 1000;
-  const totalHours = allActivities.reduce((s, a) => s + (a.moving_time || 0), 0) / 3600;
+  const totalKm = allActivities.reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
+  const totalHours = allActivities.reduce((s, a) => s + (parseFloat(a.moving_time) || 0), 0) / 3600;
   const totalCount = allActivities.length;
 
-  const swimKm = allActivities.filter(a => a.type === "Swim").reduce((s, a) => s + (a.distance || 0), 0) / 1000;
-  const bikeKm = allActivities.filter(a => a.type === "Ride").reduce((s, a) => s + (a.distance || 0), 0) / 1000;
-  const runKm = allActivities.filter(a => a.type === "Run").reduce((s, a) => s + (a.distance || 0), 0) / 1000;
+  const swimKm = allActivities.filter(isSwim).reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
+  const bikeKm = allActivities.filter(isBike).reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
+  const runKm  = allActivities.filter(isRun).reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
 
   container.innerHTML = `
     <!-- ── Synchronisations-Toolbar ──────────────────────── -->
@@ -448,8 +453,19 @@ function setupFilterListeners() {
 /** Filter auf die Aktivitäten anwenden */
 function applyFilters() {
   filteredActivities = allActivities.filter((a) => {
-    const matchesSport = currentFilterSport === "all" || a.type === currentFilterSport;
-    const matchesSearch = !currentSearchQuery || a.name.toLowerCase().includes(currentSearchQuery);
+    let matchesSport = currentFilterSport === "all";
+    if (!matchesSport) {
+      if (currentFilterSport === "Ride") {
+        matchesSport = isBike(a);
+      } else if (currentFilterSport === "Run") {
+        matchesSport = isRun(a);
+      } else if (currentFilterSport === "Swim") {
+        matchesSport = isSwim(a);
+      } else {
+        matchesSport = (a.type === currentFilterSport || a.sport_type === currentFilterSport);
+      }
+    }
+    const matchesSearch = !currentSearchQuery || (a.name || "").toLowerCase().includes(currentSearchQuery);
     return matchesSport && matchesSearch;
   });
 
@@ -482,6 +498,8 @@ function renderActivityListItems() {
     });
     const distKm = (a.distance / 1000).toFixed(1);
     const durationMin = Math.round(a.moving_time / 60);
+    const badgeClass = isBike(a) ? "badge-ride" : (isRun(a) ? "badge-run" : (isSwim(a) ? "badge-swim" : "badge-other"));
+    const badgeText = a.type === "VirtualRide" ? "VirtualRide" : (a.type || "Other");
 
     return `
       <div class="activity-card-item ${isSelected ? 'selected' : ''}" data-id="${a.id}">
@@ -495,7 +513,7 @@ function renderActivityListItems() {
         </div>
         <div class="item-right">
           <div class="item-dist">${distKm} km</div>
-          <span class="item-badge badge-${(a.type || 'other').toLowerCase()}">${a.type}</span>
+          <span class="item-badge ${badgeClass}">${badgeText}</span>
         </div>
       </div>
     `;
@@ -652,8 +670,14 @@ function renderActivityDetailChart(activity) {
   const ctx = document.getElementById("activity-detail-chart")?.getContext("2d");
   if (!ctx) return;
 
-  // Ähnliche Aktivitäten desselben Typs für den Vergleich berechnen
-  const sameTypeActs = allActivities.filter(a => a.type === activity.type);
+  // Ähnliche Aktivitäten desselben Typs für den Vergleich berechnen (inkl. VirtualRide für Rad)
+  const sameTypeActs = allActivities.filter(a => {
+    if (isBike(activity)) return isBike(a);
+    if (isRun(activity)) return isRun(a);
+    if (isSwim(activity)) return isSwim(a);
+    return a.type === activity.type;
+  });
+  const typeLabel = isBike(activity) ? "Rad" : (isRun(activity) ? "Lauf" : (isSwim(activity) ? "Schwimm" : activity.type));
   const avgDist = sameTypeActs.reduce((s, a) => s + a.distance, 0) / (sameTypeActs.length || 1) / 1000;
   const avgDuration = sameTypeActs.reduce((s, a) => s + a.moving_time, 0) / (sameTypeActs.length || 1) / 60;
   const avgElev = sameTypeActs.reduce((s, a) => s + (a.total_elevation_gain || 0), 0) / (sameTypeActs.length || 1);
@@ -676,7 +700,7 @@ function renderActivityDetailChart(activity) {
           borderRadius: 4,
         },
         {
-          label: `Dein Ø (${sameTypeActs.length} ${activity.type}-Einheiten)`,
+          label: `Dein Ø (${sameTypeActs.length} ${typeLabel}-Einheiten)`,
           data: [Math.round(avgDist * 10) / 10, Math.round(avgDuration), Math.round(avgElev)],
           backgroundColor: "rgba(100, 116, 139, 0.5)",
           borderColor: "#64748b",
@@ -727,20 +751,20 @@ function getSportIcon(type) {
 function calculatePace(type, distanceMeters, movingTimeSeconds) {
   if (!distanceMeters || !movingTimeSeconds) return "–";
 
-  if (type === "Run") {
+  if (["Run", "VirtualRun", "TrailRun", "Treadmill"].includes(type)) {
     // min/km
     const paceSeconds = movingTimeSeconds / (distanceMeters / 1000);
     const mins = Math.floor(paceSeconds / 60);
     const secs = Math.round(paceSeconds % 60).toString().padStart(2, "0");
     return `${mins}:${secs} min/km`;
-  } else if (type === "Swim") {
+  } else if (["Swim", "OpenWaterSwim"].includes(type)) {
     // min/100m
     const paceSeconds = movingTimeSeconds / (distanceMeters / 100);
     const mins = Math.floor(paceSeconds / 60);
     const secs = Math.round(paceSeconds % 60).toString().padStart(2, "0");
     return `${mins}:${secs} min/100m`;
   } else {
-    // km/h
+    // km/h (Ride, VirtualRide, etc.)
     const kmh = (distanceMeters / 1000) / (movingTimeSeconds / 3600);
     return `${kmh.toFixed(1)} km/h`;
   }

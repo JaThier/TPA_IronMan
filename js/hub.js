@@ -12,6 +12,8 @@ import { showToast } from "./ui-helpers.js";
 let currentUser = null;
 let cachedHubUsers = [];
 let demoMode = false;
+let currentHubDiscipline = "bike"; // "bike" | "run" | "swim" | "all"
+let currentHubUsers = [];
 let disciplinesChartInstance = null;
 let hoursChartInstance = null;
 
@@ -355,12 +357,17 @@ function renderHubContent(rawUsers) {
     <!-- ── 2. Vergleichs-Diagramme ──────────────────────── -->
     <div class="hub-charts-grid">
       <div class="card hub-chart-card">
-        <div class="card-header">
+        <div class="card-header chart-header-with-filter">
           <div class="card-title">
             <span class="icon">📊</span>
-            <h3>Disziplinen-Vergleich (Kilometer)</h3>
+            <h3 id="hub-discipline-chart-title">${getDisciplineChartTitle(currentHubDiscipline)}</h3>
           </div>
-          <span class="plan-meta text-muted">Schwimmen / Rad / Laufen</span>
+          <div class="discipline-toggle-group">
+            <button class="chip discipline-chip ${currentHubDiscipline === 'bike' ? 'active' : ''}" data-discipline="bike" title="Nur Rad-Kilometer vergleichen">🚴 Rad</button>
+            <button class="chip discipline-chip ${currentHubDiscipline === 'run' ? 'active' : ''}" data-discipline="run" title="Nur Lauf-Kilometer vergleichen">🏃 Laufen</button>
+            <button class="chip discipline-chip ${currentHubDiscipline === 'swim' ? 'active' : ''}" data-discipline="swim" title="Nur Schwimm-Kilometer vergleichen">🏊 Schwimmen</button>
+            <button class="chip discipline-chip ${currentHubDiscipline === 'all' ? 'active' : ''}" data-discipline="all" title="Alle Disziplinen im Vergleich">📊 Alle</button>
+          </div>
         </div>
         <div class="chart-wrapper">
           <canvas id="hub-disciplines-chart"></canvas>
@@ -441,143 +448,229 @@ function renderHubContent(rawUsers) {
 
   document.getElementById("banner-demo-btn")?.addEventListener("click", toggleDemoMode);
 
+  // Discipline-Switcher Listener
+  document.querySelectorAll(".discipline-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".discipline-chip").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentHubDiscipline = btn.dataset.discipline;
+      const titleEl = document.getElementById("hub-discipline-chart-title");
+      if (titleEl) titleEl.textContent = getDisciplineChartTitle(currentHubDiscipline);
+      renderDisciplinesChart(currentHubUsers, currentHubDiscipline);
+    });
+  });
+
   // Chart.js Diagramme initialisieren
   renderHubCharts(usersToDisplay);
 }
 
+function getDisciplineChartTitle(discipline) {
+  switch (discipline) {
+    case "bike": return "Disziplinen-Vergleich: 🚴 Rad";
+    case "run":  return "Disziplinen-Vergleich: 🏃 Laufen";
+    case "swim": return "Disziplinen-Vergleich: 🏊 Schwimmen";
+    default:     return "Disziplinen-Vergleich: 📊 Alle";
+  }
+}
+
 /** Rendert die Chart.js Diagramme */
 function renderHubCharts(users) {
+  currentHubUsers = users;
   if (typeof Chart === "undefined") {
     console.warn("[hub] Chart.js ist noch nicht geladen.");
     return;
   }
 
-  // Bestehende Chart-Instanzen zerstören
-  if (disciplinesChartInstance) disciplinesChartInstance.destroy();
-  if (hoursChartInstance) hoursChartInstance.destroy();
+  renderDisciplinesChart(users, currentHubDiscipline);
+  renderHoursChart(users);
+}
+
+/** Rendert das Disziplinen-Balkendiagramm je nach gewählter Sportart */
+function renderDisciplinesChart(users, discipline = currentHubDiscipline) {
+  if (disciplinesChartInstance) {
+    disciplinesChartInstance.destroy();
+    disciplinesChartInstance = null;
+  }
+
+  const ctxDisc = document.getElementById("hub-disciplines-chart")?.getContext("2d");
+  if (!ctxDisc || typeof Chart === "undefined") return;
 
   const labels = users.map(u => u.name || "Athlet");
   const swimData = users.map(u => u.stats?.swimKm || 0);
   const bikeData = users.map(u => u.stats?.bikeKm || 0);
   const runData = users.map(u => u.stats?.runKm || 0);
+
+  let datasets = [];
+  let yAxisTitle = "Kilometer (km)";
+
+  if (discipline === "bike") {
+    datasets = [
+      {
+        label: "🚴 Rad (km)",
+        data: bikeData,
+        backgroundColor: "rgba(249, 115, 22, 0.85)",
+        borderColor: "#f97316",
+        borderWidth: 1,
+        borderRadius: 6,
+      }
+    ];
+    yAxisTitle = "Rad-Kilometer (km)";
+  } else if (discipline === "run") {
+    datasets = [
+      {
+        label: "🏃 Laufen (km)",
+        data: runData,
+        backgroundColor: "rgba(34, 197, 94, 0.85)",
+        borderColor: "#22c55e",
+        borderWidth: 1,
+        borderRadius: 6,
+      }
+    ];
+    yAxisTitle = "Lauf-Kilometer (km)";
+  } else if (discipline === "swim") {
+    datasets = [
+      {
+        label: "🏊 Schwimmen (km)",
+        data: swimData,
+        backgroundColor: "rgba(59, 130, 246, 0.85)",
+        borderColor: "#3b82f6",
+        borderWidth: 1,
+        borderRadius: 6,
+      }
+    ];
+    yAxisTitle = "Schwimm-Kilometer (km)";
+  } else {
+    // "all"
+    datasets = [
+      {
+        label: "🏊 Schwimmen (km)",
+        data: swimData,
+        backgroundColor: "rgba(59, 130, 246, 0.8)",
+        borderColor: "#3b82f6",
+        borderWidth: 1,
+        borderRadius: 4,
+      },
+      {
+        label: "🚴 Rad (km)",
+        data: bikeData,
+        backgroundColor: "rgba(249, 115, 22, 0.8)",
+        borderColor: "#f97316",
+        borderWidth: 1,
+        borderRadius: 4,
+      },
+      {
+        label: "🏃 Laufen (km)",
+        data: runData,
+        backgroundColor: "rgba(34, 197, 94, 0.8)",
+        borderColor: "#22c55e",
+        borderWidth: 1,
+        borderRadius: 4,
+      }
+    ];
+  }
+
+  disciplinesChartInstance = new Chart(ctxDisc, {
+    type: "bar",
+    data: {
+      labels,
+      datasets
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 350 },
+      plugins: {
+        legend: {
+          display: discipline === "all",
+          labels: { color: "#94a3b8", font: { family: "Inter", size: 12 } }
+        },
+        tooltip: {
+          backgroundColor: "#111420",
+          titleColor: "#e2e8f0",
+          bodyColor: "#94a3b8",
+          borderColor: "#252a40",
+          borderWidth: 1,
+          padding: 10,
+          callbacks: {
+            label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} km`
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: "#94a3b8", font: { family: "Inter" } },
+          grid: { color: "rgba(37, 42, 64, 0.4)" }
+        },
+        y: {
+          ticks: { color: "#94a3b8", font: { family: "Inter" } },
+          grid: { color: "rgba(37, 42, 64, 0.4)" },
+          title: { display: true, text: yAxisTitle, color: "#64748b" }
+        }
+      }
+    }
+  });
+}
+
+/** Rendert das Trainingsvolumen (Stunden) Balkendiagramm */
+function renderHoursChart(users) {
+  if (hoursChartInstance) {
+    hoursChartInstance.destroy();
+    hoursChartInstance = null;
+  }
+
+  const ctxHours = document.getElementById("hub-hours-chart")?.getContext("2d");
+  if (!ctxHours || typeof Chart === "undefined") return;
+
+  const labels = users.map(u => u.name || "Athlet");
   const hoursData = users.map(u => u.stats?.totalHours || 0);
 
-  // 1. Disziplinen Balkendiagramm
-  const ctxDisc = document.getElementById("hub-disciplines-chart")?.getContext("2d");
-  if (ctxDisc) {
-    disciplinesChartInstance = new Chart(ctxDisc, {
-      type: "bar",
-      data: {
-        labels,
-        datasets: [
-          {
-            label: "🏊 Schwimmen (km)",
-            data: swimData,
-            backgroundColor: "rgba(59, 130, 246, 0.8)",
-            borderColor: "#3b82f6",
-            borderWidth: 1,
-            borderRadius: 4,
-          },
-          {
-            label: "🚴 Rad (km)",
-            data: bikeData,
-            backgroundColor: "rgba(249, 115, 22, 0.8)",
-            borderColor: "#f97316",
-            borderWidth: 1,
-            borderRadius: 4,
-          },
-          {
-            label: "🏃 Laufen (km)",
-            data: runData,
-            backgroundColor: "rgba(34, 197, 94, 0.8)",
-            borderColor: "#22c55e",
-            borderWidth: 1,
-            borderRadius: 4,
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            labels: { color: "#94a3b8", font: { family: "Inter", size: 12 } }
-          },
-          tooltip: {
-            backgroundColor: "#111420",
-            titleColor: "#e2e8f0",
-            bodyColor: "#94a3b8",
-            borderColor: "#252a40",
-            borderWidth: 1,
-            padding: 10,
-          }
+  hoursChartInstance = new Chart(ctxHours, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "⏱️ Trainingszeit (Stunden)",
+          data: hoursData,
+          backgroundColor: "rgba(232, 57, 30, 0.85)",
+          borderColor: "#e8391e",
+          borderWidth: 1,
+          borderRadius: 6,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          labels: { color: "#94a3b8", font: { family: "Inter", size: 12 } }
         },
-        scales: {
-          x: {
-            ticks: { color: "#94a3b8", font: { family: "Inter" } },
-            grid: { color: "rgba(37, 42, 64, 0.4)" }
-          },
-          y: {
-            ticks: { color: "#94a3b8", font: { family: "Inter" } },
-            grid: { color: "rgba(37, 42, 64, 0.4)" },
-            title: { display: true, text: "Kilometer", color: "#64748b" }
+        tooltip: {
+          backgroundColor: "#111420",
+          titleColor: "#e2e8f0",
+          bodyColor: "#94a3b8",
+          borderColor: "#252a40",
+          borderWidth: 1,
+          padding: 10,
+          callbacks: {
+            label: (ctx) => ` ${ctx.parsed.y} Stunden`
           }
         }
-      }
-    });
-  }
-
-  // 2. Trainingsstunden Balkendiagramm
-  const ctxHours = document.getElementById("hub-hours-chart")?.getContext("2d");
-  if (ctxHours) {
-    hoursChartInstance = new Chart(ctxHours, {
-      type: "bar",
-      data: {
-        labels,
-        datasets: [
-          {
-            label: "⏱️ Trainingszeit (Stunden)",
-            data: hoursData,
-            backgroundColor: "rgba(232, 57, 30, 0.85)",
-            borderColor: "#e8391e",
-            borderWidth: 1,
-            borderRadius: 6,
-          }
-        ]
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            labels: { color: "#94a3b8", font: { family: "Inter", size: 12 } }
-          },
-          tooltip: {
-            backgroundColor: "#111420",
-            titleColor: "#e2e8f0",
-            bodyColor: "#94a3b8",
-            borderColor: "#252a40",
-            borderWidth: 1,
-            padding: 10,
-            callbacks: {
-              label: (ctx) => ` ${ctx.parsed.y} Stunden`
-            }
-          }
+      scales: {
+        x: {
+          ticks: { color: "#94a3b8", font: { family: "Inter" } },
+          grid: { color: "rgba(37, 42, 64, 0.4)" }
         },
-        scales: {
-          x: {
-            ticks: { color: "#94a3b8", font: { family: "Inter" } },
-            grid: { color: "rgba(37, 42, 64, 0.4)" }
-          },
-          y: {
-            ticks: { color: "#94a3b8", font: { family: "Inter" } },
-            grid: { color: "rgba(37, 42, 64, 0.4)" },
-            title: { display: true, text: "Stunden", color: "#64748b" }
-          }
+        y: {
+          ticks: { color: "#94a3b8", font: { family: "Inter" } },
+          grid: { color: "rgba(37, 42, 64, 0.4)" },
+          title: { display: true, text: "Stunden", color: "#64748b" }
         }
       }
-    });
-  }
+    }
+  });
 }
 
 /** Skelett-Ladeanzeige */

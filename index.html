@@ -95,6 +95,9 @@
         <button class="nav-tab" data-tab="hub" role="tab" aria-selected="false" id="tab-hub">
           <span class="tab-icon">🏆</span> Hub
         </button>
+        <button class="nav-tab" data-tab="account" role="tab" aria-selected="false" id="tab-account">
+          <span class="tab-icon">👤</span> Konto
+        </button>
       </nav>
 
       <div class="navbar-right">
@@ -262,6 +265,71 @@
           <!-- Wird per hub.js befüllt -->
         </div>
 
+      <!-- ════════════════════════════════════════════════════
+           REITER 4: Konto & Athleten-Profil
+      ════════════════════════════════════════════════════ -->
+      <section id="view-account" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-account">
+        <div class="card account-card">
+          
+          <div class="card-header">
+            <div class="card-title">
+              <span class="icon" aria-hidden="true">👤</span>
+              <h3>Mein Athleten-Konto &amp; Einstellungen</h3>
+            </div>
+            <span class="plan-meta text-muted">Profilverwaltung</span>
+          </div>
+
+          <!-- Hero Profile Header -->
+          <div class="account-hero">
+            <div class="account-avatar-large" id="account-avatar-large">?</div>
+            <div class="account-hero-info">
+              <h2 id="account-hero-name" class="account-name">Lade Profil…</h2>
+              <div id="account-hero-email" class="account-email text-muted">–</div>
+              <div class="account-badges">
+                <span class="team-badge">🏊‍♂️🚴‍♂️🏃‍♂️ TPA IronMan Athlet</span>
+                <span id="account-strava-badge" class="strava-status-badge">
+                  <span class="badge-status-dot dot-gray"></span>
+                  <span>Prüfe Strava-Status…</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Formular zur Namensänderung -->
+          <form id="account-profile-form" class="account-form">
+            <div class="form-group">
+              <label for="account-name-input">Athleten-Name / Rufname (wird im Hub angezeigt)</label>
+              <input
+                type="text"
+                id="account-name-input"
+                name="name"
+                placeholder="z. B. Jakob Thier"
+                required
+                autocomplete="name"
+              />
+              <span class="input-hint">Dieser Name erscheint in der Team-Rangliste, auf den Hub-Podien und in deinen Trainingsplänen.</span>
+            </div>
+
+            <div class="form-group">
+              <label for="account-email-input">E-Mail-Adresse (Login-Konto)</label>
+              <input
+                type="email"
+                id="account-email-input"
+                name="email"
+                disabled
+                class="input-disabled"
+              />
+              <span class="input-hint">E-Mail ist fest mit deiner Firebase-Authentifizierung verknüpft.</span>
+            </div>
+
+            <div class="account-form-actions">
+              <button type="submit" id="account-save-btn" class="btn btn-primary" style="width: auto;">
+                💾 Änderungen speichern
+              </button>
+            </div>
+          </form>
+
+        </div>
       </section>
 
     </main>
@@ -271,6 +339,34 @@
       <p>TPA IronMan Dashboard &bull; Powered by Firebase, Strava &amp; Gemini AI</p>
     </footer>
 
+  </div>
+
+  <!-- ── Onboarding Modal (Erster Login: Namensabfrage) ──────── -->
+  <div id="name-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-name-title">
+    <div class="modal-card">
+      <span class="modal-icon">👋</span>
+      <h2 id="modal-name-title">Willkommen im Team!</h2>
+      <p class="modal-desc">
+        Wie möchtest du im Dashboard und auf dem <strong>Hub-Leaderboard</strong> genannt werden?
+      </p>
+
+      <form id="onboarding-name-form" onsubmit="event.preventDefault(); window.saveOnboardingName();">
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+          <label for="onboarding-name-input">Dein Athleten-Name / Rufname</label>
+          <input
+            type="text"
+            id="onboarding-name-input"
+            placeholder="z. B. Jakob"
+            required
+            autocomplete="name"
+          />
+        </div>
+
+        <button type="submit" id="onboarding-save-btn" class="btn btn-primary">
+          🚀 Speichern &amp; Dashboard starten
+        </button>
+      </form>
+    </div>
   </div>
 
   <!-- ── Toast-Container ──────────────────────────────────── -->

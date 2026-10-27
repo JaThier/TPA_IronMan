@@ -51,9 +51,13 @@ export async function publishUserStatsToHub(activities = [], athlete = null) {
     const last30DaysKm = last30DaysActs.reduce((s, a) => s + (a.distance || 0), 0) / 1000;
     const last30DaysHours = last30DaysActs.reduce((s, a) => s + (a.moving_time || 0), 0) / 3600;
 
-    let displayName = athlete?.firstname ? `${athlete.firstname} ${athlete.lastname || ""}`.trim() : null;
+    // Priorisiere benutzerdefinierten Anzeigenamen
+    let displayName = currentUser.displayName;
     if (!displayName) {
-      displayName = currentUser.displayName || currentUser.email.split("@")[0];
+      displayName = athlete?.firstname ? `${athlete.firstname} ${athlete.lastname || ""}`.trim() : null;
+    }
+    if (!displayName) {
+      displayName = currentUser.email.split("@")[0];
     }
 
     const payload = {

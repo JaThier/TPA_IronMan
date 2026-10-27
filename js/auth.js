@@ -62,15 +62,16 @@ async function initApp(user) {
   import("./strava.js").then((m) => m.initStrava(user));
   import("./gemini.js").then((m) => m.initTrainingPlan(user));
   import("./hub.js").then((m) => m.initHub(user));
+  import("./account.js").then((m) => m.initAccount(user));
 }
 
 // ── Tab-Navigation ─────────────────────────────────────────
 export function initTabNavigation() {
   const tabs = document.querySelectorAll(".nav-tab");
   
-  // URL Hash auswerten (z.B. #plan oder #hub)
+  // URL Hash auswerten (z.B. #plan, #hub, #account)
   const initialHash = window.location.hash.replace("#", "");
-  if (["activities", "plan", "hub"].includes(initialHash)) {
+  if (["activities", "plan", "hub", "account"].includes(initialHash)) {
     switchTab(initialHash);
   } else {
     switchTab("activities");
@@ -88,7 +89,7 @@ export function initTabNavigation() {
 
   window.addEventListener("hashchange", () => {
     const hash = window.location.hash.replace("#", "");
-    if (["activities", "plan", "hub"].includes(hash) && hash !== currentTab) {
+    if (["activities", "plan", "hub", "account"].includes(hash) && hash !== currentTab) {
       switchTab(hash);
     }
   });

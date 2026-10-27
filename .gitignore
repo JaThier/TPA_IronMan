@@ -1,0 +1,24 @@
+# Dependencies / Runtimes
+node_modules/
+.pnp
+.pnp.js
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+*.local
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary / Scratch
+scripts/
+scratch/

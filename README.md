@@ -58,20 +58,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Benutzer-spezifische Daten: nur der jeweilige User darf lesen/schreiben
+    // Benutzer-spezifische Daten (Profil, Aktivitäten-Cache, eigene Trainingspläne):
+    // Nur der jeweilige eingeloggte User darf die eigenen Daten lesen und schreiben
     match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Trainingspläne: alle Auth-User lesen, nur Eigentümer schreiben
-    match /trainingPlans/{planId} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null
-                   && request.auth.uid == resource.data.ownerId;
-    }
-
-    // App-Secrets: alle Auth-User dürfen lesen, NIEMAND schreibt vom Client
-    // (Befüllen nur via Firebase Console oder Admin SDK)
+    // App-Secrets (Strava Secret, Gemini Key):
+    // Nur authentifizierte Nutzer dürfen lesen.
+    // Schreiben vom Web-Frontend aus ist gesperrt (Schutz vor Überschreiben).
     match /config/{document} {
       allow read:  if request.auth != null;
       allow write: if false;

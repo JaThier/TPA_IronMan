@@ -327,12 +327,13 @@ ${currentPlanStr}
 1. Belastungssteuerung: Achte auf Ruhetage und Erholung zwischen intensiven Einheiten.
 2. Progressive Überlastung: Steigere das Volumen moderat (+5% bis +10%) gegenüber der letzten Woche, wenn der Athlet gut trainiert hat.
 3. Triathlon-Spezifisch: Mindestens 1 Koppeleinheit (Brick: Rad + kurzer Lauf) am Wochenende einplanen.
+4. Halte die Beschreibungen fokussiert und präzise (1-2 Sätze je Einheit).
 
 ## WICHTIG: Antwortformat
 Antworte AUSSCHLIESSLICH mit einem validen JSON-Objekt ohne Markdown-Codeblöcke (\`\`\`json) und ohne zusätzlichen Text davor oder danach:
 {
   "weekPlan": {
-    "monday":    { "type": "swim|ride|run|rest|brick", "duration": 60, "intensity": "easy|moderate|hard", "description": "Kurze genaue Einheit-Beschreibung" },
+    "monday":    { "type": "swim|ride|run|rest|brick", "duration": 60, "intensity": "easy|moderate|hard", "description": "Präzise Beschreibung der Einheit (1-2 Sätze)" },
     "tuesday":   { "type": "run", "duration": 75, "intensity": "easy", "description": "..." },
     "wednesday": { "type": "ride", "duration": 90, "intensity": "moderate", "description": "..." },
     "thursday":  { "type": "rest", "duration": 0, "intensity": "easy", "description": "Aktive Erholung" },
@@ -340,7 +341,7 @@ Antworte AUSSCHLIESSLICH mit einem validen JSON-Objekt ohne Markdown-Codeblöcke
     "saturday":  { "type": "brick", "duration": 180, "intensity": "moderate", "description": "..." },
     "sunday":    { "type": "run", "duration": 120, "intensity": "easy", "description": "Langer Lauf" }
   },
-  "coachNote": "Persönliche Analyse und Begründung des Coaches für diese Woche."
+  "coachNote": "Persönliche Analyse und Begründung des Coaches für diese Woche (2-3 Sätze)."
 }`;
 }
 
@@ -357,7 +358,8 @@ async function callGeminiAPI(prompt, apiKey) {
     ],
     generationConfig: {
       temperature: 0.4,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 8192,
+      responseMimeType: "application/json",
     }
   };
 
@@ -420,8 +422,20 @@ async function callGeminiAPI(prompt, apiKey) {
   }
 
   const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Leere Antwort von Gemini erhalten.");
+  const candidate = data.candidates?.[0];
+  if (!candidate) throw new Error("Leere Antwort von Gemini erhalten.");
+
+  if (candidate.finishReason && candidate.finishReason !== "STOP") {
+    console.warn(`[gemini] finishReason: ${candidate.finishReason}`);
+  }
+
+  // Alle Text-Parts zusammenführen (Thought-Parts überspringen)
+  const text = (candidate.content?.parts || [])
+    .filter(p => !p.thought)
+    .map(p => p.text || "")
+    .join("");
+
+  if (!text) throw new Error("Kein Text in der Gemini-Antwort gefunden.");
 
   return text;
 }
@@ -429,10 +443,17 @@ async function callGeminiAPI(prompt, apiKey) {
 function parsePlanResponse(rawText) {
   try {
     // Eventuelle Markdown-Codeblocks entfernen
-    const cleaned = rawText
+    let cleaned = rawText
       .replace(/```json/gi, "")
       .replace(/```/g, "")
       .trim();
+
+    // Nur das JSON-Objekt zwischen der ersten { und letzten } extrahieren
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace  = cleaned.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace !== -1) {
+      cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+    }
 
     const parsed = JSON.parse(cleaned);
     if (!parsed.weekPlan) return null;

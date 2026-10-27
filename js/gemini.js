@@ -12,6 +12,9 @@ import { showToast }       from "./ui-helpers.js";
 
 // ── Gemini-Konstanten & Modell-Prioritäten ──────────────────
 const PREFERRED_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.8-pro",
+  "gemini-3.0-flash",
   "gemini-2.5-flash",
   "gemini-2.0-flash",
   "gemini-1.5-flash-latest",
@@ -66,8 +69,8 @@ async function getBestAvailableModel(apiKey) {
     console.warn("[gemini] Fehler beim Ermitteln der Modell-Liste:", err);
   }
 
-  // Standard-Fallback, falls ListModels fehlschlägt
-  return "gemini-2.0-flash";
+  // Standard-Fallback
+  return "gemini-3.8-flash";
 }
 
 // ── Zustand ────────────────────────────────────────────────
@@ -371,19 +374,42 @@ async function callGeminiAPI(prompt, apiKey) {
     console.warn(`[gemini] Modell ${model} schlug mit 404 fehl, durchsuche Fallback-Modelle...`);
     cachedWorkingModel = null;
 
-    for (const fallbackModel of PREFERRED_MODELS) {
-      if (fallbackModel === model) continue;
-      const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/${fallbackModel}:generateContent?key=${apiKey}`;
-      const fallbackRes = await fetch(fallbackUrl, {
+    // Zuerst prüfen, ob Google direkt ein Ersatz-Modell in der Fehlermeldung nennt
+    const errData = await response.clone().json().catch(() => ({}));
+    const errMsg = errData.error?.message || "";
+    const match = errMsg.match(/use\s+(?:models\/)?([a-zA-Z0-9.\-_]+)/i);
+    const suggestedModel = match ? match[1] : null;
+
+    if (suggestedModel && suggestedModel !== model) {
+      console.log(`[gemini] Google empfiehlt Modell '${suggestedModel}', versuche Direktaufruf...`);
+      const directUrl = `https://generativelanguage.googleapis.com/v1beta/models/${suggestedModel}:generateContent?key=${apiKey}`;
+      const directRes = await fetch(directUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      if (fallbackRes.ok) {
-        console.log(`[gemini] Erfolgreich auf Fallback-Modell ${fallbackModel} ausgewichen.`);
-        cachedWorkingModel = fallbackModel;
-        response = fallbackRes;
-        break;
+      if (directRes.ok) {
+        console.log(`[gemini] Erfolgreich auf empfohlenes Modell ${suggestedModel} umgeschaltet.`);
+        cachedWorkingModel = suggestedModel;
+        response = directRes;
+      }
+    }
+
+    if (!response.ok) {
+      for (const fallbackModel of PREFERRED_MODELS) {
+        if (fallbackModel === model || fallbackModel === suggestedModel) continue;
+        const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/${fallbackModel}:generateContent?key=${apiKey}`;
+        const fallbackRes = await fetch(fallbackUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (fallbackRes.ok) {
+          console.log(`[gemini] Erfolgreich auf Fallback-Modell ${fallbackModel} ausgewichen.`);
+          cachedWorkingModel = fallbackModel;
+          response = fallbackRes;
+          break;
+        }
       }
     }
   }

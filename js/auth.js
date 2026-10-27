@@ -1,6 +1,6 @@
-﻿// ============================================================
+// ============================================================
 // js/auth.js
-// Firebase Authentication – Login, Logout, Auth-State
+// Firebase Authentication – Login, Logout, Auth-State & Tab-Navigation
 // ============================================================
 
 import {
@@ -23,34 +23,30 @@ const logoutBtn    = document.getElementById("logout-btn");
 const userEmailEl  = document.getElementById("user-email");
 const userAvatarEl = document.getElementById("user-avatar");
 
+let currentTab = "activities";
+
 // ── Auth-State-Listener ────────────────────────────────────
-// Wird beim App-Start einmalig registriert.
 onAuthStateChanged(auth, async (user) => {
   if (user) {
     // ✅ Eingeloggt – zuerst Secrets laden, dann Dashboard zeigen
     await initApp(user);
   } else {
     // 🔒 Nicht eingeloggt
-    clearSecrets();   // Cache leeren (z.B. nach Logout)
+    clearSecrets();
     showLoginScreen();
   }
 });
 
 /**
  * Wird nach erfolgreichem Login aufgerufen.
- * Lädt Secrets aus Firestore, zeigt dann das Dashboard,
- * und initialisiert Strava + Gemini.
  * @param {import("firebase/auth").User} user
  */
 async function initApp(user) {
-  // Ladeindikator im Login-Screen anzeigen (falls noch sichtbar)
   setLoginLoading(true);
 
   try {
-    // 🔑 Secrets aus Firestore laden (erfordert auth)
     await loadSecrets();
   } catch (err) {
-    // Secrets fehlen – Dashboard trotzdem zeigen, aber mit Warnung
     console.error("[auth] Fehler beim Laden der Secrets:", err);
     showToast(
       "⚠️ Secrets konnten nicht geladen werden. Prüfe config/secrets in Firestore.",
@@ -59,12 +55,66 @@ async function initApp(user) {
     );
   }
 
-  // Dashboard anzeigen (unabhängig vom Secret-Lade-Ergebnis)
   showDashboard(user);
+  initTabNavigation();
 
-  // Feature-Module dynamisch laden (nur nach Login!)
+  // Feature-Module dynamisch laden
   import("./strava.js").then((m) => m.initStrava(user));
   import("./gemini.js").then((m) => m.initTrainingPlan(user));
+  import("./hub.js").then((m) => m.initHub(user));
+}
+
+// ── Tab-Navigation ─────────────────────────────────────────
+export function initTabNavigation() {
+  const tabs = document.querySelectorAll(".nav-tab");
+  
+  // URL Hash auswerten (z.B. #plan oder #hub)
+  const initialHash = window.location.hash.replace("#", "");
+  if (["activities", "plan", "hub"].includes(initialHash)) {
+    switchTab(initialHash);
+  } else {
+    switchTab("activities");
+  }
+
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const target = tab.dataset.tab;
+      if (target) {
+        switchTab(target);
+        window.location.hash = target;
+      }
+    });
+  });
+
+  window.addEventListener("hashchange", () => {
+    const hash = window.location.hash.replace("#", "");
+    if (["activities", "plan", "hub"].includes(hash) && hash !== currentTab) {
+      switchTab(hash);
+    }
+  });
+}
+
+export function switchTab(tabName) {
+  currentTab = tabName;
+  const tabs = document.querySelectorAll(".nav-tab");
+  const views = document.querySelectorAll(".tab-view");
+
+  tabs.forEach((tab) => {
+    const isTarget = tab.dataset.tab === tabName;
+    tab.classList.toggle("active", isTarget);
+    tab.setAttribute("aria-selected", isTarget ? "true" : "false");
+  });
+
+  views.forEach((view) => {
+    const isTarget = view.id === `view-${tabName}`;
+    view.classList.toggle("active", isTarget);
+    view.classList.toggle("hidden", !isTarget);
+  });
+
+  // Falls zum Hub gewechselt wird, Daten aktualisieren
+  if (tabName === "hub") {
+    import("./hub.js").then(m => m.loadAndRenderHub());
+  }
 }
 
 // ── Login-Formular absenden ────────────────────────────────
@@ -79,7 +129,6 @@ loginForm?.addEventListener("submit", async (e) => {
 
   try {
     await signInWithEmailAndPassword(auth, email, password);
-    // onAuthStateChanged → initApp() übernimmt ab hier
   } catch (err) {
     setLoginLoading(false);
     showLoginError(getReadableAuthError(err.code));
@@ -91,7 +140,6 @@ logoutBtn?.addEventListener("click", async () => {
   try {
     await signOut(auth);
     showToast("Erfolgreich ausgeloggt.", "info");
-    // clearSecrets() wird durch onAuthStateChanged → else-Zweig aufgerufen
   } catch (err) {
     console.error("Logout-Fehler:", err);
     showToast("Logout fehlgeschlagen.", "error");
@@ -99,8 +147,6 @@ logoutBtn?.addEventListener("click", async () => {
 });
 
 // ── Hilfsfunktionen ────────────────────────────────────────
-
-/** Dashboard anzeigen, Login-Screen ausblenden */
 function showDashboard(user) {
   loginScreen.classList.add("hidden");
   dashboard.classList.remove("hidden");
@@ -110,37 +156,28 @@ function showDashboard(user) {
   if (userAvatarEl) userAvatarEl.textContent = user.email.charAt(0).toUpperCase();
 }
 
-/** Login-Screen anzeigen, Dashboard ausblenden */
 function showLoginScreen() {
   dashboard.classList.add("hidden");
   loginScreen.classList.remove("hidden");
   setLoginLoading(false);
 }
 
-/** Login-Button in Lade-Zustand versetzen */
 function setLoginLoading(loading) {
   if (!loginBtn) return;
   loginBtn.disabled    = loading;
   loginBtn.textContent = loading ? "Einloggen…" : "Einloggen";
 }
 
-/** Fehlermeldung anzeigen */
 function showLoginError(message) {
   if (!loginError) return;
   loginError.textContent = message;
   loginError.classList.remove("hidden");
 }
 
-/** Fehlermeldung verstecken */
 function hideLoginError() {
   loginError?.classList.add("hidden");
 }
 
-/**
- * Firebase Auth-Fehlercodes in lesbare Texte übersetzen.
- * @param {string} code
- * @returns {string}
- */
 function getReadableAuthError(code) {
   const errors = {
     "auth/invalid-email":          "Ungültige E-Mail-Adresse.",

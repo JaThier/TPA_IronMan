@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
@@ -6,11 +6,14 @@
 
   <!-- SEO -->
   <title>TPA IronMan – Trainings Dashboard</title>
-  <meta name="description" content="Persönliches Ironman-Trainings-Dashboard fuer das TPA-Team. Strava-Sync, KI-Trainingsplaene und Fortschritts-Tracking." />
+  <meta name="description" content="Persönliches Ironman-Trainings-Dashboard für das TPA-Team. Strava-Sync, KI-Trainingspläne und Team-Leistungsvergleich im Hub." />
   <meta name="theme-color" content="#0a0c12" />
 
   <!-- Favicon (Emoji als SVG) -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏊</text></svg>" />
+
+  <!-- Chart.js für interaktive Leistungs- und Vergleichsdiagramme -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <!-- CSS -->
   <link rel="stylesheet" href="css/style.css" />
@@ -19,7 +22,7 @@
 
   <!-- ══════════════════════════════════════════════════════════
        LOGIN SCREEN
-       Wird ausgeblendet, sobald Firebase-Auth bestaetigt ist.
+       Wird ausgeblendet, sobald Firebase-Auth bestätigt ist.
   ══════════════════════════════════════════════════════════ -->
   <section id="login-screen" aria-label="Anmeldebereich">
     <div class="login-card">
@@ -28,7 +31,7 @@
       <div class="login-logo">
         <span class="logo-icon" aria-hidden="true">🏊‍♂️🚴‍♂️🏃‍♂️</span>
         <h1>TPA <span>Iron</span>Man</h1>
-        <p>Training Dashboard fuer die Crew</p>
+        <p>Training Dashboard für die Crew</p>
       </div>
 
       <!-- Fehlermeldung (initial versteckt) -->
@@ -81,6 +84,19 @@
         <h2>TPA <span>Iron</span>Man</h2>
       </div>
 
+      <!-- ── Hauptmenü Tabs ────────────────────────────────── -->
+      <nav class="navbar-nav" role="tablist" aria-label="Hauptnavigation">
+        <button class="nav-tab active" data-tab="activities" role="tab" aria-selected="true" id="tab-activities">
+          <span class="tab-icon">🏃</span> Aktivitäten
+        </button>
+        <button class="nav-tab" data-tab="plan" role="tab" aria-selected="false" id="tab-plan">
+          <span class="tab-icon">📋</span> Trainingsplan
+        </button>
+        <button class="nav-tab" data-tab="hub" role="tab" aria-selected="false" id="tab-hub">
+          <span class="tab-icon">🏆</span> Hub
+        </button>
+      </nav>
+
       <div class="navbar-right">
         <!-- Benutzer-Badge -->
         <div class="user-badge" aria-label="Angemeldeter Benutzer">
@@ -95,38 +111,95 @@
       </div>
     </header>
 
-    <!-- ── Haupt-Inhalt ─────────────────────────────────────── -->
+    <!-- ── Haupt-Inhalt mit 3 Reitern ───────────────────────── -->
     <main class="dashboard-main" id="main-content">
 
-      <div class="dashboard-grid">
-
-        <!-- ════════════════════════════════════════════════════
-             BEREICH 1: Strava Synchronisation & Statistiken
-        ════════════════════════════════════════════════════ -->
-        <section class="card" aria-labelledby="strava-title">
+      <!-- ════════════════════════════════════════════════════
+           REITER 1: Aktivitäten (Master-Detail & Sync-Zeitraum)
+      ════════════════════════════════════════════════════ -->
+      <section id="view-activities" class="tab-view active" role="tabpanel" aria-labelledby="tab-activities">
+        <div class="card" aria-labelledby="strava-title">
           <div class="card-header">
             <div class="card-title">
               <span class="icon" aria-hidden="true">🚴</span>
-              <h3 id="strava-title">Strava Aktivitaeten</h3>
+              <h3 id="strava-title">Strava Aktivitäten &amp; Analyse</h3>
             </div>
-            <!-- Strava-Verbindungs-Status -->
             <span id="strava-status" class="plan-meta text-muted" aria-live="polite"></span>
           </div>
 
-          <!-- Strava-Inhalt (wird per JS befuellt) -->
+          <!-- Strava Master-Detail Ansicht (wird per JS befüllt) -->
           <div id="strava-content" aria-live="polite">
-            <!-- Initial: Skeleton-Loader wird per JS eingefuegt -->
-            <div style="display:flex;align-items:center;gap:0.75rem;padding:2rem;color:var(--clr-text-muted);">
+            <div class="strava-loading-box">
               <div class="spinner"></div>
               <span>Lade Strava-Daten…</span>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <!-- ════════════════════════════════════════════════════
-             BEREICH 2: Aktueller Trainingsplan
-        ════════════════════════════════════════════════════ -->
-        <section class="card" aria-labelledby="plan-title">
+      <!-- ════════════════════════════════════════════════════
+           REITER 2: Trainingsplan (mit Zeitraum-Konfiguration)
+      ════════════════════════════════════════════════════ -->
+      <section id="view-plan" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-plan">
+        
+        <!-- KI-Steuerungs-Panel & Analyse-Zeitraum -->
+        <div class="card ai-config-card" style="margin-bottom: 1.5rem;">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="icon" aria-hidden="true">🤖</span>
+              <h3>KI-Trainingsplan-Generator (Google Gemini)</h3>
+            </div>
+            <span class="plan-meta text-muted">Intelligente Periodisierung</span>
+          </div>
+
+          <div class="ai-config-body">
+            <p class="ai-desc">
+              Konfiguriere, wie weit deine Strava-Aktivitäten für die Analyse zurückreichen sollen. 
+              Gemini analysiert dein Trainingsvolumen, deine Belastungsspitzen und Erholungsphasen aus diesem Zeitraum 
+              und passt deinen Wochenplan dynamisch daran an.
+            </p>
+
+            <div class="ai-timeframe-toolbar">
+              <div class="timeframe-control-group">
+                <label for="ai-timeframe-select">Aktivitäten einbeziehen ab:</label>
+                <div class="input-inline-group">
+                  <select id="ai-timeframe-select" class="form-select">
+                    <option value="7">Letzte 7 Tage (1 Woche)</option>
+                    <option value="14">Letzte 14 Tage (2 Wochen)</option>
+                    <option value="28">Letzte 4 Wochen (28 Tage)</option>
+                    <option value="30" selected>Letzte 30 Tage (~1 Monat) [Standard]</option>
+                    <option value="60">Letzte 60 Tage (~2 Monate)</option>
+                    <option value="90">Letzte 90 Tage (~3 Monate)</option>
+                    <option value="custom">Benutzerdefiniert...</option>
+                  </select>
+
+                  <div id="ai-custom-timeframe-box" class="custom-inputs hidden">
+                    <input type="number" id="ai-custom-val" min="1" max="365" value="30" class="form-input-sm" />
+                    <select id="ai-custom-unit" class="form-select-sm">
+                      <option value="days" selected>Tage</option>
+                      <option value="weeks">Wochen</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <button id="ai-adjust-btn" class="btn btn-ai" aria-label="Trainingsplan von KI anpassen lassen">
+                🤖 Plan von KI anpassen lassen
+              </button>
+            </div>
+
+            <!-- Vorschau über gefilterte Aktivitäten -->
+            <div id="ai-timeframe-info" class="ai-preview-badge">
+              Lade Aktivitäts-Vorschau…
+            </div>
+
+            <!-- KI-Statusanzeige -->
+            <div id="ai-status" class="hidden" role="status" aria-live="polite"></div>
+          </div>
+        </div>
+
+        <!-- Wochentrainingsplan Card -->
+        <div class="card" aria-labelledby="plan-title">
           <div class="card-header">
             <div class="card-title">
               <span class="icon" aria-hidden="true">📋</span>
@@ -136,7 +209,13 @@
             <span id="plan-meta" class="plan-meta" aria-live="polite"></span>
           </div>
 
-          <!-- 7-Tage-Wochen-Grid (wird per JS befuellt) -->
+          <!-- Coach-Notiz (nach KI-Generierung) -->
+          <div id="coach-note-box" class="hidden coach-note-banner">
+            <strong class="coach-title">💬 Coach-Empfehlung für diese Woche:</strong>
+            <span id="coach-note"></span>
+          </div>
+
+          <!-- 7-Tage-Wochen-Grid (wird per JS befüllt) -->
           <div
             id="week-plan-grid"
             class="week-grid"
@@ -144,53 +223,47 @@
             aria-label="Wochentrainingsplan"
             aria-live="polite"
           >
-            <!-- Skeleton-Loader -->
-            <div class="day-card"><div class="skeleton" style="height:60px;"></div></div>
-            <div class="day-card"><div class="skeleton" style="height:60px;"></div></div>
-            <div class="day-card"><div class="skeleton" style="height:60px;"></div></div>
-            <div class="day-card"><div class="skeleton" style="height:60px;"></div></div>
-            <div class="day-card"><div class="skeleton" style="height:60px;"></div></div>
-            <div class="day-card"><div class="skeleton" style="height:60px;"></div></div>
-            <div class="day-card"><div class="skeleton" style="height:60px;"></div></div>
+            <!-- Skeletons -->
+            <div class="day-card"><div class="skeleton" style="height:120px;"></div></div>
+            <div class="day-card"><div class="skeleton" style="height:120px;"></div></div>
+            <div class="day-card"><div class="skeleton" style="height:120px;"></div></div>
+            <div class="day-card"><div class="skeleton" style="height:120px;"></div></div>
+            <div class="day-card"><div class="skeleton" style="height:120px;"></div></div>
+            <div class="day-card"><div class="skeleton" style="height:120px;"></div></div>
+            <div class="day-card"><div class="skeleton" style="height:120px;"></div></div>
           </div>
+        </div>
 
-          <!-- Coach-Notiz (nach KI-Generierung) -->
-          <div id="coach-note-box" class="hidden" style="
-            background: rgba(102,126,234,0.08);
-            border: 1px solid rgba(102,126,234,0.2);
-            border-radius: var(--radius-sm);
-            padding: 0.875rem 1rem;
-            font-size: 0.875rem;
-            color: #a5b4fc;
-            margin-bottom: 1rem;
-          ">
-            <strong style="display:block;margin-bottom:0.25rem;">💬 Coach-Empfehlung</strong>
-            <span id="coach-note"></span>
+      </section>
+
+      <!-- ════════════════════════════════════════════════════
+           REITER 3: Hub (Leistungsvergleich & Diagramme)
+      ════════════════════════════════════════════════════ -->
+      <section id="view-hub" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-hub">
+        
+        <div class="hub-header-bar">
+          <div>
+            <h2 class="hub-main-title">🏆 TPA IronMan Crew Hub</h2>
+            <p class="hub-subtitle">Vergleiche deine Trainingsumfänge, Disziplinen und Fortschritte mit deinen Teamkollegen.</p>
           </div>
-
-          <!-- KI-Anpassungs-Bereich -->
-          <div class="ai-panel">
-            <p>
-              Lass die KI deinen Trainingsplan auf Basis deiner letzten Strava-Aktivitaeten
-              und des aktuellen Plans optimieren. Beruecksichtigt Erholung, Belastungssteuerung
-              und progressive Ueberlastung.
-            </p>
-
-            <button
-              id="ai-adjust-btn"
-              class="btn btn-ai"
-              aria-label="Trainingsplan von KI anpassen lassen"
-            >
-              🤖 Plan von KI anpassen lassen
+          
+          <div class="hub-header-actions">
+            <button id="demo-toggle-btn" class="btn btn-secondary">
+              👥 Demo-Crew einblenden
             </button>
-
-            <!-- KI-Status (Ladeindikator, initial versteckt) -->
-            <div id="ai-status" class="hidden" role="status" aria-live="polite"></div>
+            <button id="hub-refresh-btn" class="btn btn-primary" style="width: auto;">
+              🔄 Hub aktualisieren
+            </button>
           </div>
+        </div>
 
-        </section>
+        <!-- Dynamischer Inhalt (Podiums, Chart.js Diagramme & Team-Tabelle) -->
+        <div id="hub-content">
+          <!-- Wird per hub.js befüllt -->
+        </div>
 
-      </div>
+      </section>
+
     </main>
 
     <!-- ── Footer ───────────────────────────────────────────── -->
@@ -203,11 +276,7 @@
   <!-- ── Toast-Container ──────────────────────────────────── -->
   <div id="toast-container" aria-live="assertive" aria-atomic="true"></div>
 
-  <!-- ══════════════════════════════════════════════════════════
-       JavaScript – ES Modules
-       auth.js ist der Einstiegspunkt und laedt andere Module
-       dynamisch nach erfolgreichem Login.
-  ══════════════════════════════════════════════════════════ -->
+  <!-- JavaScript Module Entry -->
   <script type="module" src="js/auth.js"></script>
 
 </body>

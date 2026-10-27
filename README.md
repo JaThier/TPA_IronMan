@@ -72,6 +72,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Community-Hub: Alle Team-Mitglieder vergleichen Statistiken.
+    // Jeder authentifizierte Nutzer darf alle Stats lesen, aber nur die eigenen schreiben.
+    match /hub/{userId} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
   }
 }
 ```

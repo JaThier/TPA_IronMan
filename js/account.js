@@ -150,15 +150,16 @@ async function handleAccountFormSubmit(e) {
  * @param {string} newName
  */
 export async function updateAthleteName(newName) {
-  if (!currentUser) return;
+  const user = currentUser || auth.currentUser;
+  if (!user) return;
 
   // 1. Firebase Auth Profile aktualisieren
-  await updateProfile(auth.currentUser, {
+  await updateProfile(user, {
     displayName: newName,
   });
 
   // 2. Firestore Profil speichern
-  const profileRef = doc(db, "users", currentUser.uid, "profile", "main");
+  const profileRef = doc(db, "users", user.uid, "profile", "main");
   await setDoc(profileRef, {
     displayName: newName,
     name:        newName,
@@ -166,17 +167,21 @@ export async function updateAthleteName(newName) {
   }, { merge: true });
 
   // 3. Im Hub aktualisieren
-  const hubRef = doc(db, "hub", currentUser.uid);
+  const hubRef = doc(db, "hub", user.uid);
   await setDoc(hubRef, {
+    uid:       user.uid,
     name:      newName,
     updatedAt: new Date().toISOString(),
   }, { merge: true });
 
   // 4. Navbar aktualisieren
-  updateNavbarUserBadge(newName, currentUser.email);
+  updateNavbarUserBadge(newName, user.email);
 
-  // 5. Hub-Ansicht neu rendern falls aktiv
-  loadAndRenderHub();
+  // 5. Hub-Statistiken synchronisieren und neu rendern
+  import("./hub.js").then(async (m) => {
+    await m.syncOwnStatsFromCache();
+    await m.loadAndRenderHub();
+  });
 }
 
 /**

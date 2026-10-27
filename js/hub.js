@@ -3,11 +3,12 @@
 // Community Hub – Vergleich der Trainingsleistungen aller User
 // ============================================================
 
-import { db } from "./firebase-config.js";
+import { db, auth } from "./firebase-config.js";
 import {
-  collection, doc, getDoc, getDocs, setDoc,
+  collection, doc, getDoc, getDocs, setDoc, deleteDoc,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast } from "./ui-helpers.js";
+import { getActivities, getStravaTokens } from "./strava.js";
 
 let currentUser = null;
 let cachedHubUsers = [];
@@ -15,18 +16,68 @@ let demoMode = false;
 let disciplinesChartInstance = null;
 let hoursChartInstance = null;
 
+// ── Hilfsfunktionen zur Disziplin-Erkennung ─────────────────
+function isSwim(a) {
+  const t = (a.sport_type || a.type || "").toLowerCase();
+  return t.includes("swim");
+}
+
+function isBike(a) {
+  const t = (a.sport_type || a.type || "").toLowerCase();
+  return t.includes("ride") || t.includes("bike") || t.includes("cycle");
+}
+
+function isRun(a) {
+  const t = (a.sport_type || a.type || "").toLowerCase();
+  return t.includes("run");
+}
+
 /**
  * Initialisiert den Hub nach dem Login.
  * @param {import("firebase/auth").User} user
  */
 export async function initHub(user) {
-  currentUser = user;
+  currentUser = user || auth.currentUser;
   
   // Event-Listener für Hub-Buttons
   document.getElementById("hub-refresh-btn")?.addEventListener("click", () => loadAndRenderHub(true));
   document.getElementById("demo-toggle-btn")?.addEventListener("click", toggleDemoMode);
 
+  // Eigene Stats aus dem lokalen Aktivitäten-Cache synchronisieren, falls vorhanden
+  await syncOwnStatsFromCache();
+
   await loadAndRenderHub();
+}
+
+/**
+ * Liest den lokalen Aktivitäten-Cache und aktualisiert die eigenen Hub-Statistiken.
+ */
+export async function syncOwnStatsFromCache() {
+  const user = currentUser || auth.currentUser;
+  if (!user) return;
+
+  try {
+    // 1. Zuerst prüfen ob strava.js bereits Aktivitäten im Speicher hat
+    let activities = typeof getActivities === "function" ? getActivities() : [];
+    let athlete = typeof getStravaTokens === "function" ? getStravaTokens() : null;
+
+    // 2. Falls nicht im Speicher, aus Firestore Cache laden
+    if (!activities || activities.length === 0) {
+      const actSnap = await getDoc(doc(db, "users", user.uid, "cache", "activities"));
+      activities = actSnap.exists() ? (actSnap.data().data || []) : [];
+    }
+
+    if (!athlete) {
+      const stravaSnap = await getDoc(doc(db, "users", user.uid, "profile", "strava"));
+      athlete = stravaSnap.exists() ? stravaSnap.data() : null;
+    }
+
+    if (activities && activities.length > 0) {
+      await publishUserStatsToHub(activities, athlete);
+    }
+  } catch (err) {
+    console.warn("[hub] Cache-Sync für Hub:", err);
+  }
 }
 
 /**
@@ -36,35 +87,51 @@ export async function initHub(user) {
  * @param {Object} athlete
  */
 export async function publishUserStatsToHub(activities = [], athlete = null) {
-  if (!currentUser) return;
+  const user = currentUser || auth.currentUser;
+  if (!user) return;
+
+  // Fallback: Aktivitäten aus strava.js abfragen falls leeres Array übergeben
+  if (!activities || activities.length === 0) {
+    const memoryActs = typeof getActivities === "function" ? getActivities() : [];
+    if (memoryActs && memoryActs.length > 0) {
+      activities = memoryActs;
+    }
+  }
+
+  if (!athlete && typeof getStravaTokens === "function") {
+    athlete = getStravaTokens();
+  }
 
   try {
-    const totalKm    = activities.reduce((s, a) => s + (a.distance || 0), 0) / 1000;
-    const totalHours = activities.reduce((s, a) => s + (a.moving_time || 0), 0) / 3600;
+    const totalKm    = activities.reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
+    const totalHours = activities.reduce((s, a) => s + (parseFloat(a.moving_time) || 0), 0) / 3600;
 
-    const swimKm = activities.filter(a => a.type === "Swim").reduce((s, a) => s + (a.distance || 0), 0) / 1000;
-    const bikeKm = activities.filter(a => a.type === "Ride").reduce((s, a) => s + (a.distance || 0), 0) / 1000;
-    const runKm  = activities.filter(a => a.type === "Run").reduce((s, a) => s + (a.distance || 0), 0) / 1000;
+    const swimKm = activities.filter(isSwim).reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
+    const bikeKm = activities.filter(isBike).reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
+    const runKm  = activities.filter(isRun).reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
 
     const thirtyDaysAgo = Date.now() - (30 * 24 * 3600 * 1000);
-    const last30DaysActs = activities.filter(a => new Date(a.start_date).getTime() >= thirtyDaysAgo);
-    const last30DaysKm = last30DaysActs.reduce((s, a) => s + (a.distance || 0), 0) / 1000;
-    const last30DaysHours = last30DaysActs.reduce((s, a) => s + (a.moving_time || 0), 0) / 3600;
+    const last30DaysActs = activities.filter(a => new Date(a.start_date || a.start_date_local || 0).getTime() >= thirtyDaysAgo);
+    const last30DaysKm = last30DaysActs.reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
+    const last30DaysHours = last30DaysActs.reduce((s, a) => s + (parseFloat(a.moving_time) || 0), 0) / 3600;
 
     // Priorisiere benutzerdefinierten Anzeigenamen
-    let displayName = currentUser.displayName;
-    if (!displayName) {
+    let displayName = user.displayName;
+    if (!displayName || displayName.includes("@")) {
       displayName = athlete?.firstname ? `${athlete.firstname} ${athlete.lastname || ""}`.trim() : null;
     }
     if (!displayName) {
-      displayName = currentUser.email.split("@")[0];
+      displayName = athlete?.athleteName || null;
+    }
+    if (!displayName || displayName.includes("@")) {
+      displayName = user.email ? user.email.split("@")[0] : "Athlet";
     }
 
     const payload = {
-      uid:       currentUser.uid,
+      uid:       user.uid,
       name:      displayName,
-      email:     currentUser.email,
-      avatar:    athlete?.profile || null,
+      email:     user.email,
+      avatar:    athlete?.profile || athlete?.athleteProfile || null,
       updatedAt: new Date().toISOString(),
       stats: {
         totalKm:         Math.round(totalKm * 10) / 10,
@@ -78,9 +145,23 @@ export async function publishUserStatsToHub(activities = [], athlete = null) {
       }
     };
 
-    const ref = doc(db, "hub", currentUser.uid);
+    const ref = doc(db, "hub", user.uid);
     await setDoc(ref, payload, { merge: true });
-    console.log("[hub] Eigene Statistiken erfolgreich im Hub veröffentlicht.");
+    console.log("[hub] Eigene Statistiken erfolgreich im Hub veröffentlicht:", payload.stats);
+
+    // Lokalen In-Memory Cache sofort aktualisieren
+    const existingIdx = cachedHubUsers.findIndex(u => u.uid === user.uid || u.id === user.uid);
+    if (existingIdx >= 0) {
+      cachedHubUsers[existingIdx] = { ...cachedHubUsers[existingIdx], ...payload };
+    } else {
+      cachedHubUsers.push({ id: user.uid, ...payload });
+    }
+
+    // Wenn der Hub-Container bereits im DOM ist, sofort neu rendern
+    const hubContent = document.getElementById("hub-content");
+    if (hubContent && !hubContent.querySelector(".spinner")) {
+      renderHubContent(cachedHubUsers);
+    }
   } catch (err) {
     if (err.code === "permission-denied") {
       console.warn("[hub] Firestore blockiert Schreiben auf /hub. Bitte Sicherheitsregeln prüfen.");
@@ -92,28 +173,86 @@ export async function publishUserStatsToHub(activities = [], athlete = null) {
 
 /**
  * Lädt alle Nutzerstatistiken aus Firestore und rendert die Ansicht.
+ * Bereinigt fehlerhafte/verwaiste Dokumente und dedupliziert strikt nach Benutzer.
  * @param {boolean} forceToast
  */
 export async function loadAndRenderHub(forceToast = false) {
   renderHubSkeleton();
+  const user = currentUser || auth.currentUser;
 
   try {
     const hubRef = collection(db, "hub");
     const snap = await getDocs(hubRef);
 
-    const users = [];
+    const validUsers = [];
+    const deletePromises = [];
+
     snap.forEach((d) => {
-      users.push({ id: d.id, ...d.data() });
+      const data = d.data();
+      const docId = d.id;
+
+      // 1. Ungültige/korrupte Dokumente löschen (z.B. id "undefined", "null", "NaN")
+      if (!docId || docId === "undefined" || docId === "null" || docId === "NaN") {
+        console.warn(`[hub] Lösche korruptes Dokument '${docId}' aus Firestore…`);
+        deletePromises.push(deleteDoc(doc(db, "hub", docId)).catch(() => {}));
+        return;
+      }
+
+      // 2. Dokumente des aktuellen Users, die aber NICHT unter der echten UID liegen (verwaiste Duplikate)
+      if (user) {
+        const isSameEmail = data.email && user.email && data.email.toLowerCase() === user.email.toLowerCase();
+        const isSameName = data.name && user.displayName && data.name.trim().toLowerCase() === user.displayName.trim().toLowerCase();
+
+        if (docId !== user.uid && (isSameEmail || isSameName)) {
+          console.warn(`[hub] Lösche verwaistes Duplikat '${docId}' für User ${user.email}…`);
+          deletePromises.push(deleteDoc(doc(db, "hub", docId)).catch(() => {}));
+          return; // Nicht in die Rangliste aufnehmen!
+        }
+      }
+
+      const uid = data.uid || docId;
+      validUsers.push({ id: docId, uid, ...data });
     });
 
-    cachedHubUsers = users;
+    if (deletePromises.length > 0) {
+      await Promise.allSettled(deletePromises);
+    }
 
-    // Falls der aktuelle User noch nicht im Hub ist (z.B. vor erstem Strava-Sync)
-    if (!cachedHubUsers.some(u => u.uid === currentUser?.uid)) {
-      cachedHubUsers.push({
-        uid: currentUser.uid,
-        name: currentUser.displayName || currentUser.email.split("@")[0],
-        email: currentUser.email,
+    // 3. Eindeutige Deduplizierung nach UID und E-Mail
+    const userMap = new Map();
+    for (const u of validUsers) {
+      const key = u.uid || (u.email ? u.email.toLowerCase() : u.id);
+      if (!userMap.has(key)) {
+        userMap.set(key, u);
+      } else {
+        const existing = userMap.get(key);
+        // Bevorzuge Dokument des eingeloggten Users oder das mit mehr Kilometern
+        if (u.uid === user?.uid || (u.stats?.totalKm || 0) > (existing.stats?.totalKm || 0)) {
+          userMap.set(key, u);
+        }
+      }
+    }
+
+    // 4. Prüfe den eingeloggten Nutzer
+    const myKey = user?.uid;
+    let meEntry = myKey ? userMap.get(myKey) : null;
+
+    // Falls Stats fehlen oder 0 sind, Aktivitäten sofort aus dem Speicher / Cache übernehmen
+    const localActivities = typeof getActivities === "function" ? getActivities() : [];
+    if (user && localActivities && localActivities.length > 0) {
+      if (!meEntry || !meEntry.stats || meEntry.stats.totalKm === 0) {
+        await publishUserStatsToHub(localActivities, typeof getStravaTokens === "function" ? getStravaTokens() : null);
+        const updated = cachedHubUsers.find(u => u.uid === user.uid || u.id === user.uid);
+        if (updated) {
+          userMap.set(myKey, updated);
+        }
+      }
+    } else if (user && !meEntry) {
+      userMap.set(myKey, {
+        id: user.uid,
+        uid: user.uid,
+        name: user.displayName || user.email.split("@")[0],
+        email: user.email,
         updatedAt: new Date().toISOString(),
         stats: {
           totalKm: 0, totalHours: 0, activityCount: 0,
@@ -122,6 +261,8 @@ export async function loadAndRenderHub(forceToast = false) {
         }
       });
     }
+
+    cachedHubUsers = Array.from(userMap.values());
 
     renderHubContent(cachedHubUsers);
     if (forceToast) showToast("Hub-Statistiken aktualisiert!", "success");
@@ -297,7 +438,8 @@ function renderHubContent(rawUsers) {
               .sort((a,b) => (b.stats?.totalKm || 0) - (a.stats?.totalKm || 0))
               .map((u, idx) => {
                 const s = u.stats || {};
-                const isMe = u.uid === currentUser?.uid;
+                const myUid = currentUser?.uid || auth.currentUser?.uid;
+                const isMe = Boolean(myUid && (u.uid === myUid || u.id === myUid));
                 return `
                   <tr class="${isMe ? 'row-me' : ''}">
                     <td class="rank-cell">

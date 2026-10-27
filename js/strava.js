@@ -792,3 +792,13 @@ function renderStravaSkeleton() {
 
 window.stravaConnect = connectToStrava;
 window.stravaSync = () => fetchAndDisplayActivities(syncDaysSetting);
+
+/** Gibt die aktuell geladenen Aktivitäten zurück */
+export function getActivities() {
+  return allActivities;
+}
+
+/** Gibt die aktuellen Strava-Tokens / Athleteninfos zurück */
+export function getStravaTokens() {
+  return stravaTokens;
+}

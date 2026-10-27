@@ -112,9 +112,12 @@ export function switchTab(tabName) {
     view.classList.toggle("hidden", !isTarget);
   });
 
-  // Falls zum Hub gewechselt wird, Daten aktualisieren
+  // Falls zum Hub gewechselt wird, Daten synchronisieren und aktualisieren
   if (tabName === "hub") {
-    import("./hub.js").then(m => m.loadAndRenderHub());
+    import("./hub.js").then(async (m) => {
+      await m.syncOwnStatsFromCache();
+      await m.loadAndRenderHub();
+    });
   }
 }
 

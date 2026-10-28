@@ -1,6 +1,6 @@
 // ============================================================
 // js/hub.js
-// Community Hub – Vergleich der Trainingsleistungen aller User
+// Community Hub – Fairer Vergleich der Trainingsleistungen aller User
 // ============================================================
 
 import { auth, db } from "./firebase-config.js";
@@ -9,9 +9,26 @@ import {
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast } from "./ui-helpers.js";
 
+/** Konfiguration der verfügbaren Zeiträume für den fairen Leistungsvergleich */
+export const HUB_TIMEFRAMES = {
+  "7d":   { id: "7d",   label: "1 Woche",   shortLabel: "1 Woche",   days: 7 },
+  "14d":  { id: "14d",  label: "2 Wochen",  shortLabel: "2 Wochen",  days: 14 },
+  "30d":  { id: "30d",  label: "1 Monat",   shortLabel: "1 Monat",   days: 30 },
+  "60d":  { id: "60d",  label: "2 Monate",  shortLabel: "2 Monate",  days: 60 },
+  "180d": { id: "180d", label: "6 Monate",  shortLabel: "6 Monate",  days: 180 },
+  "365d": { id: "365d", label: "Jahr",      shortLabel: "1 Jahr",    days: 365 },
+};
+
 let currentUser = null;
 let cachedHubUsers = [];
-let demoMode = false;
+let currentHubTimeframe = (() => {
+  try {
+    const saved = localStorage.getItem("tpa_hub_timeframe");
+    return HUB_TIMEFRAMES[saved] ? saved : "7d";
+  } catch (_) {
+    return "7d";
+  }
+})();
 let currentHubDiscipline = "bike"; // "bike" | "run" | "swim" | "all"
 let currentHubUsers = [];
 let disciplinesChartInstance = null;
@@ -23,25 +40,187 @@ let hoursChartInstance = null;
  */
 export async function initHub(user) {
   currentUser = user;
+  bindHubControls();
+  await loadAndRenderHub();
+}
 
-  // Event-Listener für Hub-Buttons
+/**
+ * Bindet Event-Listener an die Steuerungselemente (Aktualisieren-Button und Zeitraum-Dropdown).
+ */
+function bindHubControls() {
   const refreshBtn = document.getElementById("hub-refresh-btn");
   if (refreshBtn && !refreshBtn.dataset.bound) {
     refreshBtn.dataset.bound = "true";
     refreshBtn.addEventListener("click", () => loadAndRenderHub(true));
   }
-  const demoBtn = document.getElementById("demo-toggle-btn");
-  if (demoBtn && !demoBtn.dataset.bound) {
-    demoBtn.dataset.bound = "true";
-    demoBtn.addEventListener("click", toggleDemoMode);
-  }
 
-  await loadAndRenderHub();
+  const timeframeSelect = document.getElementById("hub-timeframe-select");
+  if (timeframeSelect) {
+    timeframeSelect.value = currentHubTimeframe;
+    if (!timeframeSelect.dataset.bound) {
+      timeframeSelect.dataset.bound = "true";
+      timeframeSelect.addEventListener("change", (e) => {
+        const val = e.target.value;
+        if (HUB_TIMEFRAMES[val]) {
+          currentHubTimeframe = val;
+          try {
+            localStorage.setItem("tpa_hub_timeframe", currentHubTimeframe);
+          } catch (_) {}
+          renderHubContent(cachedHubUsers);
+        }
+      });
+    }
+  }
 }
 
 /**
- * Veröffentlicht die aggregierten Statistiken des aktuellen Nutzers in Firestore (Sammlung /hub).
- * Wird automatisch nach jedem Strava-Sync und beim Hub-Laden aufgerufen.
+ * Berechnet aggregierte Statistiken für einen bestimmten Zeitraum in Tagen.
+ * Berücksichtigt strikt nur Aktivitäten innerhalb des gewünschten Zeitfensters.
+ * @param {Array} activities
+ * @param {number} days
+ */
+function computeStatsForTimeframe(activities, days) {
+  const isSwim = (a) => ["Swim", "OpenWaterSwim"].includes(a.type || a.sport_type);
+  const isBike = (a) => ["Ride", "VirtualRide", "GravelRide", "MountainBikeRide", "EBikeRide", "Handcycle"].includes(a.type || a.sport_type);
+  const isRun  = (a) => ["Run", "VirtualRun", "TrailRun", "Treadmill"].includes(a.type || a.sport_type);
+
+  const now = Date.now();
+  const cutoff = now - (days * 24 * 3600 * 1000);
+
+  const periodActs = (activities || []).filter(a => {
+    const raw = a.start_date || a.start_date_local || a.date;
+    if (!raw) return false;
+    let t = 0;
+    if (typeof raw === "number") {
+      t = raw < 1e11 ? raw * 1000 : raw;
+    } else {
+      t = new Date(raw).getTime();
+    }
+    return !isNaN(t) && t >= cutoff && t <= (now + 86400000);
+  });
+
+  const swimKm     = Math.round((periodActs.filter(isSwim).reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000) * 10) / 10;
+  const bikeKm     = Math.round((periodActs.filter(isBike).reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000) * 10) / 10;
+  const runKm      = Math.round((periodActs.filter(isRun).reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000) * 10) / 10;
+  const triKm      = Math.round((swimKm + bikeKm + runKm) * 10) / 10;
+  const rawTotalKm = Math.round((periodActs.reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000) * 10) / 10;
+  const totalKm    = triKm > 0 ? triKm : rawTotalKm;
+  const totalHours = Math.round((periodActs.reduce((s, a) => s + (parseFloat(a.moving_time) || 0), 0) / 3600) * 10) / 10;
+
+  return {
+    totalKm,
+    totalHours,
+    activityCount: periodActs.length,
+    swimKm,
+    bikeKm,
+    runKm,
+  };
+}
+
+/**
+ * Gibt die passenden Statistiken für einen Nutzer im gewünschten Zeitraum zurück.
+ * Nutzt primär die tatsächlichen Aktivitäten des Athleten, falls vorhanden.
+ * @param {Object} userDoc
+ * @param {string} tfId
+ */
+function getUserStatsForTimeframe(userDoc, tfId = currentHubTimeframe) {
+  const tf = HUB_TIMEFRAMES[tfId] || HUB_TIMEFRAMES["7d"];
+
+  // 1. Haben wir Aktivitäten für diesen Athleten?
+  // (entweder aus dem Firestore-Dokument oder für den aktuellen User direkt aus dem Speicher)
+  const myUid = currentUser?.uid || auth.currentUser?.uid;
+  const isMe = Boolean(myUid && (userDoc.uid === myUid || userDoc.id === myUid));
+
+  let acts = userDoc?.activities;
+  if ((!acts || acts.length === 0) && isMe) {
+    acts = window.stravaActivities || [];
+  }
+
+  if (acts && Array.isArray(acts) && acts.length > 0) {
+    return computeStatsForTimeframe(acts, tf.days);
+  }
+
+  // 2. Gespeicherte periods aus Firestore (falls vorhanden)
+  if (userDoc?.periods && userDoc.periods[tf.id]) {
+    return { ...userDoc.periods[tf.id] };
+  }
+
+  // 3. Mathematisch sauberer Proportional-Fallback für ältere Hub-Dokumente
+  // (Athleten, deren Daten vor der Zeitraum-Filterung gespeichert wurden):
+  const fallback = userDoc?.stats || {};
+  const allTimeBike = parseFloat(fallback.bikeKm) || 0;
+  const allTimeRun  = parseFloat(fallback.runKm) || 0;
+  const allTimeSwim = parseFloat(fallback.swimKm) || 0;
+  const allTimeDiscSum = allTimeBike + allTimeRun + allTimeSwim;
+  const allTimeTotalKm = parseFloat(fallback.totalKm) || allTimeDiscSum || 0;
+  const allTimeHours = parseFloat(fallback.totalHours) || 0;
+  const allTimeActs = parseInt(fallback.activityCount, 10) || 0;
+
+  const last30Km = parseFloat(fallback.last30DaysKm) || 0;
+  const last30Hours = parseFloat(fallback.last30DaysHours) || 0;
+
+  // Disziplinen-Verhältnis des Athleten ermitteln
+  const bikeRatio = allTimeDiscSum > 0 ? (allTimeBike / allTimeDiscSum) : 0;
+  const runRatio  = allTimeDiscSum > 0 ? (allTimeRun  / allTimeDiscSum) : 0;
+  const swimRatio = allTimeDiscSum > 0 ? (allTimeSwim / allTimeDiscSum) : 0;
+
+  // 30-Tage Basis-Kilometer ermitteln
+  const effective30Km = last30Km > 0 ? last30Km : (allTimeTotalKm > 0 ? allTimeTotalKm * (30 / 365) : 0);
+  const effective30Hours = last30Hours > 0 ? last30Hours : (allTimeHours > 0 ? allTimeHours * (30 / 365) : 0);
+  const base30Acts = (allTimeTotalKm > 0 && allTimeActs > 0)
+    ? Math.max(1, Math.round(allTimeActs * (effective30Km / allTimeTotalKm)))
+    : Math.max(0, Math.round(allTimeActs / 12));
+
+  let targetKm = 0;
+  let targetHours = 0;
+  let targetActs = 0;
+
+  if (tf.days <= 30) {
+    const ratio30 = tf.days / 30;
+    targetKm = effective30Km * ratio30;
+    targetHours = effective30Hours * ratio30;
+    targetActs = Math.max(targetKm > 0 ? 1 : 0, Math.round(base30Acts * ratio30));
+  } else if (tf.days >= 365) {
+    targetKm = allTimeTotalKm > 0 ? allTimeTotalKm : effective30Km * 12;
+    targetHours = allTimeHours > 0 ? allTimeHours : effective30Hours * 12;
+    targetActs = allTimeActs > 0 ? allTimeActs : base30Acts * 12;
+  } else {
+    // Zwischen 30 und 365 Tagen linear interpolieren
+    const extraDays = tf.days - 30;
+    const remainingDays = 365 - 30; // 335
+    const fullKm = allTimeTotalKm > effective30Km ? allTimeTotalKm : effective30Km * (365 / 30);
+    const fullHours = allTimeHours > effective30Hours ? allTimeHours : effective30Hours * (365 / 30);
+    const fullActs = allTimeActs > base30Acts ? allTimeActs : base30Acts * 12;
+
+    const remainingKm = Math.max(0, fullKm - effective30Km);
+    const remainingHours = Math.max(0, fullHours - effective30Hours);
+    const remainingActs = Math.max(0, fullActs - base30Acts);
+    const progressRatio = Math.min(1, extraDays / remainingDays);
+
+    targetKm = effective30Km + (remainingKm * progressRatio);
+    targetHours = effective30Hours + (remainingHours * progressRatio);
+    targetActs = base30Acts + Math.round(remainingActs * progressRatio);
+  }
+
+  // Aufteilung strikt nach Disziplin-Ratio, damit Summe exakt Gesamt (km) entspricht
+  const periodBike = Math.round(targetKm * bikeRatio * 10) / 10;
+  const periodRun  = Math.round(targetKm * runRatio * 10) / 10;
+  const periodSwim = Math.round(targetKm * swimRatio * 10) / 10;
+  const periodTotal = Math.round((periodBike + periodRun + periodSwim) * 10) / 10;
+
+  return {
+    totalKm:       periodTotal > 0 ? periodTotal : Math.round(targetKm * 10) / 10,
+    totalHours:    Math.round(targetHours * 10) / 10,
+    activityCount: targetActs,
+    swimKm:        periodSwim,
+    bikeKm:        periodBike,
+    runKm:         periodRun,
+  };
+}
+
+/**
+ * Veröffentlicht die aggregierten Statistiken sowie die Aktivitätenliste des aktuellen Nutzers
+ * für ALLE Vergleichszeiträume in Firestore (Sammlung /hub).
  * @param {Array} activities
  * @param {Object} athlete
  */
@@ -50,24 +229,34 @@ export async function publishUserStatsToHub(activities = [], athlete = null) {
   if (!user) return;
 
   try {
-    const isSwim = (a) => ["Swim", "OpenWaterSwim"].includes(a.type || a.sport_type);
-    const isBike = (a) => ["Ride", "VirtualRide", "GravelRide", "MountainBikeRide", "EBikeRide", "Handcycle"].includes(a.type || a.sport_type);
-    const isRun  = (a) => ["Run", "VirtualRun", "TrailRun", "Treadmill"].includes(a.type || a.sport_type);
+    const now = Date.now();
+    const periods = {};
 
-    const totalKm    = activities.reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
-    const totalHours = activities.reduce((s, a) => s + (parseFloat(a.moving_time) || 0), 0) / 3600;
+    // Berechne aggregierte Metriken für jede Zeitraum-Option
+    for (const [tfId, tf] of Object.entries(HUB_TIMEFRAMES)) {
+      periods[tfId] = computeStatsForTimeframe(activities, tf.days);
+    }
 
-    const swimKm = activities.filter(isSwim).reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
-    const bikeKm = activities.filter(isBike).reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
-    const runKm  = activities.filter(isRun).reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
+    // Ermittle Datenabdeckung (ältester Aktivitäten-Zeitstempel)
+    const timestamps = (activities || [])
+      .map(a => {
+        const raw = a.start_date || a.start_date_local || a.date;
+        if (!raw) return 0;
+        return typeof raw === "number" ? (raw < 1e11 ? raw * 1000 : raw) : new Date(raw).getTime();
+      })
+      .filter(t => !isNaN(t) && t > 0);
+    const oldestTimestamp = timestamps.length > 0 ? Math.min(...timestamps) : null;
+    const syncedDays = oldestTimestamp ? Math.max(1, Math.round((now - oldestTimestamp) / (24 * 3600 * 1000))) : 0;
 
-    const thirtyDaysAgo = Date.now() - (30 * 24 * 3600 * 1000);
-    const last30DaysActs = activities.filter(a => {
-      const d = new Date(a.start_date || a.start_date_local || 0).getTime();
-      return !isNaN(d) && d >= thirtyDaysAgo;
-    });
-    const last30DaysKm = last30DaysActs.reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
-    const last30DaysHours = last30DaysActs.reduce((s, a) => s + (parseFloat(a.moving_time) || 0), 0) / 3600;
+    // Schlanke Aktivitäten-Liste für teamweiten dynamischen Zeitabgleich mitspeichern
+    const simplifiedActivities = (activities || []).map(a => ({
+      id:          a.id || null,
+      name:        a.name || "",
+      type:        a.type || a.sport_type || "Other",
+      distance:    parseFloat(a.distance) || 0,
+      moving_time: parseFloat(a.moving_time) || 0,
+      start_date:  a.start_date || a.start_date_local || "",
+    }));
 
     // Priorisiere benutzerdefinierten Anzeigenamen
     let displayName = user.displayName;
@@ -79,26 +268,23 @@ export async function publishUserStatsToHub(activities = [], athlete = null) {
     }
 
     const payload = {
-      uid:       user.uid,
-      name:      displayName,
-      email:     user.email,
-      avatar:    athlete?.athleteProfile || athlete?.profile || null,
-      updatedAt: new Date().toISOString(),
-      stats: {
-        totalKm:         Math.round(totalKm * 10) / 10,
-        totalHours:      Math.round(totalHours * 10) / 10,
-        activityCount:   activities.length,
-        swimKm:          Math.round(swimKm * 10) / 10,
-        bikeKm:          Math.round(bikeKm * 10) / 10,
-        runKm:           Math.round(runKm * 10) / 10,
-        last30DaysKm:    Math.round(last30DaysKm * 10) / 10,
-        last30DaysHours: Math.round(last30DaysHours * 10) / 10,
+      uid:                user.uid,
+      name:               displayName,
+      email:              user.email,
+      avatar:             athlete?.athleteProfile || athlete?.profile || null,
+      updatedAt:          new Date().toISOString(),
+      activities:         simplifiedActivities,
+      periods:            periods,
+      syncedDays:         syncedDays,
+      oldestActivityDate: oldestTimestamp ? new Date(oldestTimestamp).toISOString() : null,
+      stats:              periods["30d"] || {
+        totalKm: 0, totalHours: 0, activityCount: 0, swimKm: 0, bikeKm: 0, runKm: 0
       }
     };
 
     const ref = doc(db, "hub", user.uid);
     await setDoc(ref, payload, { merge: true });
-    console.log("[hub] Eigene Statistiken erfolgreich im Hub veröffentlicht:", payload.stats);
+    console.log("[hub] Eigene Statistiken für alle Zeiträume im Hub veröffentlicht:", payload.periods);
 
     // Lokalen Cache sofort synchron halten
     const existingIdx = cachedHubUsers.findIndex(u => (u.uid === user.uid || u.id === user.uid));
@@ -137,6 +323,7 @@ async function syncOwnStatsIfMissing(user) {
       const cacheSnap = await getDoc(cacheRef);
       if (cacheSnap.exists() && Array.isArray(cacheSnap.data().data)) {
         acts = cacheSnap.data().data;
+        window.stravaActivities = acts;
       }
     } catch (err) {
       console.warn("[hub] Konnte Aktivitäten-Cache nicht laden:", err);
@@ -149,6 +336,7 @@ async function syncOwnStatsIfMissing(user) {
       const stravaSnap = await getDoc(stravaRef);
       if (stravaSnap.exists()) {
         tokens = stravaSnap.data();
+        window.stravaTokens = tokens;
       }
     } catch (err) {
       console.warn("[hub] Konnte Strava-Profil nicht laden:", err);
@@ -166,6 +354,7 @@ async function syncOwnStatsIfMissing(user) {
  */
 export async function loadAndRenderHub(forceToast = false) {
   renderHubSkeleton();
+  bindHubControls();
   const user = currentUser || auth.currentUser;
 
   try {
@@ -198,19 +387,25 @@ export async function loadAndRenderHub(forceToast = false) {
         userMap.set(key, u);
       } else {
         const existing = userMap.get(key);
-        // Bevorzuge Dokument mit der echten UID oder mit mehr Kilometern
-        if (u.id === user?.uid || u.uid === user?.uid || (u.stats?.totalKm || 0) > (existing.stats?.totalKm || 0)) {
+        // Bevorzuge Dokument mit activities oder periods oder mit neuerem updatedAt
+        const uHasData = Boolean(u.activities?.length || u.periods);
+        const existHasData = Boolean(existing.activities?.length || existing.periods);
+        if (uHasData && !existHasData) {
+          userMap.set(key, u);
+        } else if (u.id === user?.uid || u.uid === user?.uid) {
+          userMap.set(key, u);
+        } else if (new Date(u.updatedAt || 0) > new Date(existing.updatedAt || 0)) {
           userMap.set(key, u);
         }
       }
     }
 
-    // Falls der aktuelle User noch nicht im Hub ist
+    // Eigene Aktivitäten des aktuellen Users immer im Hub-Eintrag sicherstellen
     if (user) {
       const myKey = user.uid;
       let meEntry = userMap.get(myKey);
       if (!meEntry) {
-        for (const [k, v] of userMap.entries()) {
+        for (const [, v] of userMap.entries()) {
           if (v.email && user.email && v.email.toLowerCase() === user.email.toLowerCase()) {
             meEntry = v;
             break;
@@ -218,21 +413,67 @@ export async function loadAndRenderHub(forceToast = false) {
         }
       }
 
-      if (!meEntry) {
+      const myActs = window.stravaActivities || [];
+      if (meEntry) {
+        if (myActs.length > 0) {
+          meEntry.activities = myActs.map(a => ({
+            id:          a.id || null,
+            name:        a.name || "",
+            type:        a.type || a.sport_type || "Other",
+            distance:    parseFloat(a.distance) || 0,
+            moving_time: parseFloat(a.moving_time) || 0,
+            start_date:  a.start_date || a.start_date_local || "",
+          }));
+          meEntry.periods = Object.keys(HUB_TIMEFRAMES).reduce((acc, k) => {
+            acc[k] = computeStatsForTimeframe(myActs, HUB_TIMEFRAMES[k].days);
+            return acc;
+          }, {});
+        }
+      } else {
         userMap.set(myKey, {
           id: user.uid,
           uid: user.uid,
           name: user.displayName || (user.email ? user.email.split("@")[0] : "Athlet"),
           email: user.email,
           updatedAt: new Date().toISOString(),
-          stats: {
-            totalKm: 0, totalHours: 0, activityCount: 0,
-            swimKm: 0, bikeKm: 0, runKm: 0,
-            last30DaysKm: 0, last30DaysHours: 0,
-          }
+          activities: myActs.map(a => ({
+            id:          a.id || null,
+            name:        a.name || "",
+            type:        a.type || a.sport_type || "Other",
+            distance:    parseFloat(a.distance) || 0,
+            moving_time: parseFloat(a.moving_time) || 0,
+            start_date:  a.start_date || a.start_date_local || "",
+          })),
+          periods: Object.keys(HUB_TIMEFRAMES).reduce((acc, k) => {
+            acc[k] = computeStatsForTimeframe(myActs, HUB_TIMEFRAMES[k].days);
+            return acc;
+          }, {}),
+          stats: computeStatsForTimeframe(myActs, 30),
         });
       }
     }
+
+    // Für alle Athleten Aktivitäten aus users/{uid}/cache/activities nachladen, falls noch nicht im Hub-Doc
+    const allCrewUsers = Array.from(userMap.values());
+    await Promise.allSettled(
+      allCrewUsers.map(async (u) => {
+        if (u.activities && Array.isArray(u.activities) && u.activities.length > 0) return;
+        if (user && (u.uid === user.uid || u.id === user.uid) && window.stravaActivities?.length > 0) {
+          u.activities = window.stravaActivities;
+          return;
+        }
+        try {
+          const cacheRef = doc(db, "users", u.uid, "cache", "activities");
+          const cacheSnap = await getDoc(cacheRef);
+          if (cacheSnap.exists() && Array.isArray(cacheSnap.data()?.data)) {
+            u.activities = cacheSnap.data().data;
+            console.log(`[hub] Aktivitäten für ${u.name || u.uid} aus users-Cache geladen: ${u.activities.length}`);
+          }
+        } catch (_) {
+          // Zugriff auf andere User-Caches kann durch Firestore-Regeln beschränkt sein
+        }
+      })
+    );
 
     cachedHubUsers = Array.from(userMap.values());
 
@@ -249,65 +490,30 @@ export async function loadAndRenderHub(forceToast = false) {
   }
 }
 
-/** Umschalten des Demo-Modus mit simulierten Teamkollegen */
-function toggleDemoMode() {
-  demoMode = !demoMode;
-  const btn = document.getElementById("demo-toggle-btn");
-  if (btn) {
-    btn.textContent = demoMode ? "👁️ Nur echte Daten anzeigen" : "👥 Demo-Crew einblenden";
-    btn.classList.toggle("btn-active", demoMode);
-  }
-  renderHubContent(cachedHubUsers);
-}
-
-/** Gibt eine Liste von Mock-Athleten für die Vorschau zurück */
-function getDemoUsers(currentUserData) {
-  const current = currentUserData || {
-    name: "Du",
-    stats: { totalKm: 120, totalHours: 12, activityCount: 10, swimKm: 8, bikeKm: 80, runKm: 32 }
-  };
-
-  return [
-    current,
-    {
-      uid: "mock-1",
-      name: "Flo (IronMan 2026)",
-      email: "flo@tpa-team.de",
-      updatedAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-      stats: { totalKm: 284.5, totalHours: 18.2, activityCount: 16, swimKm: 12.5, bikeKm: 210.0, runKm: 62.0, last30DaysKm: 240, last30DaysHours: 15.5 }
-    },
-    {
-      uid: "mock-2",
-      name: "Maxi B.",
-      email: "maxi@tpa-team.de",
-      updatedAt: new Date(Date.now() - 3600000 * 12).toISOString(),
-      stats: { totalKm: 215.0, totalHours: 15.8, activityCount: 13, swimKm: 16.0, bikeKm: 145.0, runKm: 54.0, last30DaysKm: 180, last30DaysHours: 13.0 }
-    },
-    {
-      uid: "mock-3",
-      name: "Lukas P.",
-      email: "lukas@tpa-team.de",
-      updatedAt: new Date(Date.now() - 3600000 * 28).toISOString(),
-      stats: { totalKm: 310.2, totalHours: 21.0, activityCount: 19, swimKm: 9.2, bikeKm: 245.0, runKm: 56.0, last30DaysKm: 260, last30DaysHours: 18.0 }
-    }
-  ];
-}
-
-/** Rendert den gesamten Hub-Inhalt */
+/**
+ * Rendert den gesamten Hub-Inhalt basierend auf dem gewählten Zeitraum.
+ * @param {Array} rawUsers
+ */
 function renderHubContent(rawUsers) {
   const container = document.getElementById("hub-content");
   if (!container) return;
 
-  const myUid = currentUser?.uid || auth.currentUser?.uid;
-  const myRealUser = rawUsers.find(u => (myUid && (u.uid === myUid || u.id === myUid))) || rawUsers[0];
-  const usersToDisplay = demoMode ? getDemoUsers(myRealUser) : rawUsers;
-  const isSingleUser = !demoMode && usersToDisplay.length <= 1;
+  const tfInfo = HUB_TIMEFRAMES[currentHubTimeframe] || HUB_TIMEFRAMES["30d"];
 
-  // Sortierte Leaderboards berechnen
-  const topSwim = [...usersToDisplay].sort((a, b) => (b.stats?.swimKm || 0) - (a.stats?.swimKm || 0))[0];
-  const topBike = [...usersToDisplay].sort((a, b) => (b.stats?.bikeKm || 0) - (a.stats?.bikeKm || 0))[0];
-  const topRun = [...usersToDisplay].sort((a, b) => (b.stats?.runKm || 0) - (a.stats?.runKm || 0))[0];
-  const topHours = [...usersToDisplay].sort((a, b) => (b.stats?.totalHours || 0) - (a.stats?.totalHours || 0))[0];
+  // Bereite Nutzerdaten mit den Statistiken für den ausgewählten Zeitraum auf
+  const myUid = currentUser?.uid || auth.currentUser?.uid;
+  const usersToDisplay = (rawUsers || []).map(u => ({
+    ...u,
+    currentStats: getUserStatsForTimeframe(u, tfInfo.id),
+  }));
+
+  const isSingleUser = usersToDisplay.length <= 1;
+
+  // Sortierte Leaderboards berechnen (je nach Metrik im gewählten Zeitraum)
+  const topSwim = [...usersToDisplay].sort((a, b) => (b.currentStats?.swimKm || 0) - (a.currentStats?.swimKm || 0))[0];
+  const topBike = [...usersToDisplay].sort((a, b) => (b.currentStats?.bikeKm || 0) - (a.currentStats?.bikeKm || 0))[0];
+  const topRun = [...usersToDisplay].sort((a, b) => (b.currentStats?.runKm || 0) - (a.currentStats?.runKm || 0))[0];
+  const topHours = [...usersToDisplay].sort((a, b) => (b.currentStats?.totalHours || 0) - (a.currentStats?.totalHours || 0))[0];
 
   container.innerHTML = `
     ${isSingleUser ? `
@@ -315,11 +521,8 @@ function renderHubContent(rawUsers) {
         <div class="banner-icon">💡</div>
         <div class="banner-body">
           <strong>Bisher ist 1 Athlet im Hub registriert.</strong>
-          <p>Sobald deine Kumpels sich einloggen und Strava verbinden, erscheinen sie hier automatisch im Leistungsvergleich!</p>
+          <p>Sobald deine Kumpels sich einloggen und Strava verbinden, erscheinen sie hier automatisch im fairen Leistungsvergleich!</p>
         </div>
-        <button id="banner-demo-btn" class="btn btn-secondary" style="font-size:0.8rem; padding:0.4rem 0.8rem;">
-          👥 Demo-Crew einblenden
-        </button>
       </div>
     ` : ""}
 
@@ -327,30 +530,30 @@ function renderHubContent(rawUsers) {
     <div class="hub-podiums-grid">
       <div class="podium-card podium-swim">
         <div class="podium-badge">🏊‍♂️ WASSER-KÖNIG</div>
-        <div class="podium-name">${topSwim?.name || "–"}</div>
-        <div class="podium-metric">${(topSwim?.stats?.swimKm || 0).toFixed(1)} <span class="unit">km</span></div>
-        <div class="podium-sub">Meiste Schwimm-Kilometer</div>
+        <div class="podium-name">${(topSwim?.currentStats?.swimKm || 0) > 0 ? (topSwim?.name || "–") : "–"}</div>
+        <div class="podium-metric">${(topSwim?.currentStats?.swimKm || 0).toFixed(1)} <span class="unit">km</span></div>
+        <div class="podium-sub">Meiste Schwimm-Kilometer (${tfInfo.label})</div>
       </div>
 
       <div class="podium-card podium-bike">
         <div class="podium-badge">🚴‍♂️ STRASSEN-KÖNIG</div>
-        <div class="podium-name">${topBike?.name || "–"}</div>
-        <div class="podium-metric">${(topBike?.stats?.bikeKm || 0).toFixed(1)} <span class="unit">km</span></div>
-        <div class="podium-sub">Meiste Rad-Kilometer</div>
+        <div class="podium-name">${(topBike?.currentStats?.bikeKm || 0) > 0 ? (topBike?.name || "–") : "–"}</div>
+        <div class="podium-metric">${(topBike?.currentStats?.bikeKm || 0).toFixed(1)} <span class="unit">km</span></div>
+        <div class="podium-sub">Meiste Rad-Kilometer (${tfInfo.label})</div>
       </div>
 
       <div class="podium-card podium-run">
         <div class="podium-badge">🏃‍♂️ LAUF-CHAMPION</div>
-        <div class="podium-name">${topRun?.name || "–"}</div>
-        <div class="podium-metric">${(topRun?.stats?.runKm || 0).toFixed(1)} <span class="unit">km</span></div>
-        <div class="podium-sub">Meiste Lauf-Kilometer</div>
+        <div class="podium-name">${(topRun?.currentStats?.runKm || 0) > 0 ? (topRun?.name || "–") : "–"}</div>
+        <div class="podium-metric">${(topRun?.currentStats?.runKm || 0).toFixed(1)} <span class="unit">km</span></div>
+        <div class="podium-sub">Meiste Lauf-Kilometer (${tfInfo.label})</div>
       </div>
 
       <div class="podium-card podium-hours">
         <div class="podium-badge">⏱️ AUSDAUER-LEADER</div>
-        <div class="podium-name">${topHours?.name || "–"}</div>
-        <div class="podium-metric">${(topHours?.stats?.totalHours || 0).toFixed(1)} <span class="unit">Std.</span></div>
-        <div class="podium-sub">Gesamte Trainingszeit</div>
+        <div class="podium-name">${(topHours?.currentStats?.totalHours || 0) > 0 ? (topHours?.name || "–") : "–"}</div>
+        <div class="podium-metric">${(topHours?.currentStats?.totalHours || 0).toFixed(1)} <span class="unit">Std.</span></div>
+        <div class="podium-sub">Gesamte Trainingszeit (${tfInfo.label})</div>
       </div>
     </div>
 
@@ -360,7 +563,7 @@ function renderHubContent(rawUsers) {
         <div class="card-header chart-header-with-filter">
           <div class="card-title">
             <span class="icon">📊</span>
-            <h3 id="hub-discipline-chart-title">${getDisciplineChartTitle(currentHubDiscipline)}</h3>
+            <h3 id="hub-discipline-chart-title">${getDisciplineChartTitle(currentHubDiscipline, tfInfo.label)}</h3>
           </div>
           <div class="discipline-toggle-group">
             <button class="chip discipline-chip ${currentHubDiscipline === 'bike' ? 'active' : ''}" data-discipline="bike" title="Nur Rad-Kilometer vergleichen">🚴 Rad</button>
@@ -380,7 +583,7 @@ function renderHubContent(rawUsers) {
             <span class="icon">⏱️</span>
             <h3>Trainingsvolumen (Stunden)</h3>
           </div>
-          <span class="plan-meta text-muted">Gesamte Bewegungszeit</span>
+          <span class="plan-meta text-muted">Gesamte Bewegungszeit (${tfInfo.label})</span>
         </div>
         <div class="chart-wrapper">
           <canvas id="hub-hours-chart"></canvas>
@@ -395,7 +598,7 @@ function renderHubContent(rawUsers) {
           <span class="icon">👥</span>
           <h3>Team-Rangliste</h3>
         </div>
-        <span class="plan-meta text-muted">${usersToDisplay.length} Athlet${usersToDisplay.length === 1 ? "" : "en"}</span>
+        <span class="plan-meta text-muted">${usersToDisplay.length} Athlet${usersToDisplay.length === 1 ? "" : "en"} • Zeitraum: <strong>${tfInfo.label}</strong></span>
       </div>
 
       <div class="hub-table-responsive">
@@ -414,11 +617,12 @@ function renderHubContent(rawUsers) {
           </thead>
           <tbody>
             ${[...usersToDisplay]
-              .sort((a, b) => (b.stats?.totalKm || 0) - (a.stats?.totalKm || 0))
+              .sort((a, b) => (b.currentStats?.totalKm || 0) - (a.currentStats?.totalKm || 0))
               .map((u, idx) => {
-                const s = u.stats || {};
+                const s = u.currentStats || {};
                 const isMe = Boolean(myUid && (u.uid === myUid || u.id === myUid));
                 const athleteName = u.name || (isMe ? (auth.currentUser?.displayName || "Du") : "Athlet");
+                const hasLimitedData = Boolean(u.syncedDays && u.syncedDays < (tfInfo.days - 2));
                 return `
                   <tr class="${isMe ? 'row-me' : ''}">
                     <td class="rank-cell">
@@ -429,6 +633,7 @@ function renderHubContent(rawUsers) {
                       <div>
                         <strong>${athleteName}</strong>
                         ${isMe ? '<span class="badge-me">Du</span>' : ''}
+                        ${hasLimitedData ? `<span class="badge-synced-days" title="Aktivitätsdaten dieses Athleten umfassen ${u.syncedDays} Tage">${u.syncedDays}d Daten</span>` : ''}
                       </div>
                     </td>
                     <td>${(s.swimKm || 0).toFixed(1)} km</td>
@@ -446,8 +651,6 @@ function renderHubContent(rawUsers) {
     </div>
   `;
 
-  document.getElementById("banner-demo-btn")?.addEventListener("click", toggleDemoMode);
-
   // Discipline-Switcher Listener
   document.querySelectorAll(".discipline-chip").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -455,7 +658,7 @@ function renderHubContent(rawUsers) {
       btn.classList.add("active");
       currentHubDiscipline = btn.dataset.discipline;
       const titleEl = document.getElementById("hub-discipline-chart-title");
-      if (titleEl) titleEl.textContent = getDisciplineChartTitle(currentHubDiscipline);
+      if (titleEl) titleEl.textContent = getDisciplineChartTitle(currentHubDiscipline, tfInfo.label);
       renderDisciplinesChart(currentHubUsers, currentHubDiscipline);
     });
   });
@@ -464,12 +667,18 @@ function renderHubContent(rawUsers) {
   renderHubCharts(usersToDisplay);
 }
 
-function getDisciplineChartTitle(discipline) {
+/**
+ * Gibt den passenden Titel für das Disziplinen-Diagramm inklusive gewähltem Zeitraum zurück.
+ * @param {string} discipline
+ * @param {string} timeframeLabel
+ */
+function getDisciplineChartTitle(discipline, timeframeLabel = "") {
+  const suffix = timeframeLabel ? ` • ${timeframeLabel}` : "";
   switch (discipline) {
-    case "bike": return "Disziplinen-Vergleich: 🚴 Rad";
-    case "run":  return "Disziplinen-Vergleich: 🏃 Laufen";
-    case "swim": return "Disziplinen-Vergleich: 🏊 Schwimmen";
-    default:     return "Disziplinen-Vergleich: 📊 Alle";
+    case "bike": return `Disziplinen-Vergleich: 🚴 Rad${suffix}`;
+    case "run":  return `Disziplinen-Vergleich: 🏃 Laufen${suffix}`;
+    case "swim": return `Disziplinen-Vergleich: 🏊 Schwimmen${suffix}`;
+    default:     return `Disziplinen-Vergleich: 📊 Alle${suffix}`;
   }
 }
 
@@ -496,9 +705,9 @@ function renderDisciplinesChart(users, discipline = currentHubDiscipline) {
   if (!ctxDisc || typeof Chart === "undefined") return;
 
   const labels = users.map(u => u.name || "Athlet");
-  const swimData = users.map(u => u.stats?.swimKm || 0);
-  const bikeData = users.map(u => u.stats?.bikeKm || 0);
-  const runData = users.map(u => u.stats?.runKm || 0);
+  const swimData = users.map(u => (u.currentStats?.swimKm != null ? u.currentStats.swimKm : 0));
+  const bikeData = users.map(u => (u.currentStats?.bikeKm != null ? u.currentStats.bikeKm : 0));
+  const runData  = users.map(u => (u.currentStats?.runKm != null ? u.currentStats.runKm : 0));
 
   let datasets = [];
   let yAxisTitle = "Kilometer (km)";
@@ -622,7 +831,7 @@ function renderHoursChart(users) {
   if (!ctxHours || typeof Chart === "undefined") return;
 
   const labels = users.map(u => u.name || "Athlet");
-  const hoursData = users.map(u => u.stats?.totalHours || 0);
+  const hoursData = users.map(u => (u.currentStats?.totalHours != null ? u.currentStats.totalHours : 0));
 
   hoursChartInstance = new Chart(ctxHours, {
     type: "bar",
@@ -654,7 +863,7 @@ function renderHoursChart(users) {
           borderWidth: 1,
           padding: 10,
           callbacks: {
-            label: (ctx) => ` ${ctx.parsed.y} Stunden`
+            label: (ctx) => ` ${Number(ctx.parsed.y).toFixed(1)} Stunden`
           }
         }
       },

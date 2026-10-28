@@ -31,15 +31,14 @@ Die Vorbereitung auf eine Langdistanz erfordert monatelange Konsistenz, präzise
 
 ### 🏆 Community Hub & Team-Rangliste
 - **Automatischer Leistungsabgleich:** Sobald ein Teammitglied Aktivitäten synchronisiert, werden die aggregierten Gesamtkilometer und Trainingsstunden verschlüsselt im Hub veröffentlicht.
-- **Saison- & Monatsstatistiken:** Automatische Erfassung von Gesamtumfängen und 30-Tage-Volumen je Disziplin.
+- **Flexibler Zeitraum-Filter:** Umschalten des Vergleichszeitraums (1 Woche, 2 Wochen, 1 Monat, 2 Monate, 6 Monate, Jahr) für einen fairen und konsistenten Leistungsabgleich auf gleicher Zeitbasis.
 - **Auszeichnungs-Podien:**
   - 🏊‍♂️ **Wasser-König:** Führender Athlet nach Schwimmkilometern
   - 🚴‍♂️ **Straßen-König:** Führender Athlet nach Radkilometern
   - 🏃‍♂️ **Lauf-Champion:** Führender Athlet nach Laufkilometern
   - ⏱️ **Ausdauer-Leader:** Führender Athlet nach gesamter Bewegungszeit
-- **Disziplin- & Volumen-Charts:** Interaktive Balkendiagramme zum visuellen Team-Vergleich.
-- **Team-Rangliste:** Vollständige Übersichtstabelle aller registrierten Athleten mit Rang, Disziplinkilometern, Gesamtvolumen und persönlicher Hervorhebung (`Du`-Badge).
-- **Demo-Crew-Modus:** Optionaler Demonstrationsmodus zur Visualisierung mit simulierten Teamkollegen.
+- **Disziplin- & Volumen-Charts:** Interaktive Balkendiagramme zum visuellen Team-Vergleich je gewähltem Zeitraum.
+- **Team-Rangliste:** Vollständige Übersichtstabelle aller registrierten Athleten mit Rang, Disziplinkilometern, Gesamtvolumen, Einheiten und persönlicher Hervorhebung (`Du`-Badge).
 
 ### 👤 Athleten-Konto & Profilverwaltung
 - **Personalisierter Rufname:** Jeder Athlet kann seinen Anzeigenamen festlegen, der im Community Hub und auf den Leaderboard-Podien erscheint.

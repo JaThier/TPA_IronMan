@@ -252,9 +252,19 @@
           </div>
 
           <div class="hub-header-actions">
-            <button id="demo-toggle-btn" class="btn btn-secondary">
-              👥 Demo-Crew einblenden
-            </button>
+            <div class="hub-timeframe-control">
+              <label for="hub-timeframe-select" class="hub-timeframe-label">
+                <span class="hub-timeframe-icon" aria-hidden="true">⏱️</span> Zeitraum:
+              </label>
+              <select id="hub-timeframe-select" class="form-select hub-timeframe-select" aria-label="Betrachteter Zeitraum für Leistungsvergleich">
+                <option value="7d" selected>1 Woche</option>
+                <option value="14d">2 Wochen</option>
+                <option value="30d">1 Monat</option>
+                <option value="60d">2 Monate</option>
+                <option value="180d">6 Monate</option>
+                <option value="365d">Jahr</option>
+              </select>
+            </div>
             <button id="hub-refresh-btn" class="btn btn-primary" style="width: auto;">
               🔄 Hub aktualisieren
             </button>
@@ -358,7 +368,7 @@
   <div id="toast-container" aria-live="assertive" aria-atomic="true"></div>
 
   <!-- JavaScript Module Entry -->
-  <script type="module" src="js/auth.js"></script>
+  <script type="module" src="js/auth.js?v=2.2"></script>
 
 </body>
 

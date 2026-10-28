@@ -58,11 +58,12 @@ async function initApp(user) {
   showDashboard(user);
   initTabNavigation();
 
-  // Feature-Module dynamisch laden
-  import("./strava.js").then((m) => m.initStrava(user));
-  import("./gemini.js").then((m) => m.initTrainingPlan(user));
-  import("./hub.js").then((m) => m.initHub(user));
-  import("./account.js").then((m) => m.initAccount(user));
+  // Feature-Module dynamisch laden (Cache-Busting für Entwicklungsstand)
+  const cb = Date.now();
+  import(`./strava.js?cb=${cb}`).then((m) => m.initStrava(user));
+  import(`./gemini.js?cb=${cb}`).then((m) => m.initTrainingPlan(user));
+  import(`./hub.js?cb=${cb}`).then((m) => m.initHub(user));
+  import(`./account.js?cb=${cb}`).then((m) => m.initAccount(user));
 }
 
 // ── Tab-Navigation ─────────────────────────────────────────
@@ -113,10 +114,11 @@ export function switchTab(tabName) {
   });
 
   // Falls zum Hub gewechselt wird, Daten aktualisieren
+  const cb = Date.now();
   if (tabName === "hub") {
-    import("./hub.js").then(m => m.loadAndRenderHub());
+    import(`./hub.js?cb=${cb}`).then(m => m.loadAndRenderHub());
   } else if (tabName === "plan") {
-    import("./gemini.js").then(m => m.updateActivityCountPreview?.());
+    import(`./gemini.js?cb=${cb}`).then(m => m.updateActivityCountPreview?.());
   }
 }
 

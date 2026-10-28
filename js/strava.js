@@ -38,6 +38,36 @@ let currentSearchQuery = "";
 let syncDaysSetting = 30; // Standard: 30 Tage
 let detailChartInstance = null;
 
+// ── Hilfsfunktion: Sortierung nach Datum (neueste zuerst) ──
+/**
+ * Extrahiert den Zeitstempel einer Aktivität zuverlässig (start_date_local bevorzugt).
+ * @param {Object} a
+ * @returns {number}
+ */
+export function parseActivityDate(a) {
+  if (!a) return 0;
+  const raw = a.start_date_local || a.start_date || a.date;
+  if (!raw) return 0;
+  if (typeof raw === "number") {
+    return raw < 1e11 ? raw * 1000 : raw;
+  }
+  const t = new Date(raw).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
+/**
+ * Sortiert Aktivitäten absteigend nach Datum (neueste Aktivität zuerst).
+ * @param {Array} activities
+ * @returns {Array}
+ */
+export function sortActivitiesDesc(activities = []) {
+  return [...activities].sort((a, b) => {
+    const timeA = parseActivityDate(a);
+    const timeB = parseActivityDate(b);
+    return timeB - timeA;
+  });
+}
+
 // ── Initialisierung ────────────────────────────────────────
 export async function initStrava(user) {
   currentUser = user;
@@ -61,7 +91,7 @@ export async function initStrava(user) {
     // Vorhandene gecachte Aktivitäten laden oder frisch abrufen
     const cached = await loadCachedActivities();
     if (cached.length > 0) {
-      allActivities = cached;
+      allActivities = sortActivitiesDesc(cached);
       window.stravaActivities = allActivities;
       window.stravaTokens = stravaTokens;
       selectedActivityId = allActivities[0]?.id || null;
@@ -226,7 +256,7 @@ export async function fetchAndDisplayActivities(days = syncDaysSetting) {
       }
     }
 
-    allActivities = fetched;
+    allActivities = sortActivitiesDesc(fetched);
     window.stravaActivities = allActivities;
     window.stravaTokens = stravaTokens;
     if (allActivities.length > 0) {
@@ -452,7 +482,7 @@ function setupFilterListeners() {
 
 /** Filter auf die Aktivitäten anwenden */
 function applyFilters() {
-  filteredActivities = allActivities.filter((a) => {
+  filteredActivities = sortActivitiesDesc(allActivities).filter((a) => {
     let matchesSport = currentFilterSport === "all";
     if (!matchesSport) {
       if (currentFilterSport === "Ride") {
@@ -469,7 +499,7 @@ function applyFilters() {
     return matchesSport && matchesSearch;
   });
 
-  // Falls die aktuell ausgewählte Aktivität nicht mehr im Filter liegt, erste nehmen
+  // Falls die aktuell ausgewählte Aktivität nicht mehr im Filter liegt, erste nehmen (neueste)
   if (filteredActivities.length > 0 && !filteredActivities.some(a => a.id === selectedActivityId)) {
     selectedActivityId = filteredActivities[0].id;
   }
@@ -480,7 +510,9 @@ function renderActivityListItems() {
   const container = document.getElementById("activities-scroll-container");
   if (!container) return;
 
-  if (filteredActivities.length === 0) {
+  const sortedList = sortActivitiesDesc(filteredActivities);
+
+  if (sortedList.length === 0) {
     container.innerHTML = `
       <div class="empty-list-notice">
         <span>🔍</span>
@@ -490,7 +522,7 @@ function renderActivityListItems() {
     return;
   }
 
-  container.innerHTML = filteredActivities.map((a) => {
+  container.innerHTML = sortedList.map((a) => {
     const isSelected = a.id === selectedActivityId;
     const icon = getSportIcon(a.type);
     const dateStr = new Date(a.start_date_local).toLocaleDateString("de-DE", {

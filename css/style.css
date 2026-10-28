@@ -248,6 +248,19 @@ body {
   box-shadow:  0 0 20px rgba(102, 126, 234, 0.35);
 }
 
+/* AI Feedback Button */
+.btn-ai-feedback {
+  background: linear-gradient(135deg, #0284c7, #0d9488);
+  color: #fff;
+  border: 1px solid rgba(13, 148, 136, 0.4);
+}
+
+.btn-ai-feedback:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0369a1, #0f766e);
+  transform: translateY(-1px);
+  box-shadow: 0 0 20px rgba(14, 165, 233, 0.4);
+}
+
 /* Logout */
 .btn-logout {
   background:  transparent;
@@ -1216,6 +1229,410 @@ body {
   color:         #fff;
 }
 
+/* ── KI Button Group ──────────────────────────────────────── */
+.ai-button-group {
+  display:     flex;
+  align-items: center;
+  gap:         0.75rem;
+  flex-wrap:   wrap;
+}
+
+@media (max-width: 640px) {
+  .ai-button-group {
+    width: 100%;
+  }
+  .ai-button-group .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ── KI-Feedback & Analyse Card ───────────────────────────── */
+.ai-feedback-card {
+  background:    var(--clr-surface);
+  border:        1px solid rgba(14, 165, 233, 0.35);
+  border-radius: var(--radius-lg);
+  box-shadow:    0 12px 36px rgba(0, 0, 0, 0.45), 0 0 28px rgba(14, 165, 233, 0.12);
+  overflow:      hidden;
+  transition:    var(--transition);
+}
+
+.ai-feedback-header {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     center;
+  background:      linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(99, 102, 241, 0.05));
+  border-bottom:   1px solid rgba(14, 165, 233, 0.2);
+  padding:         1rem 1.25rem;
+  flex-wrap:       wrap;
+  gap:             0.5rem;
+}
+
+.feedback-meta-actions {
+  display:     flex;
+  align-items: center;
+  gap:         0.85rem;
+}
+
+.feedback-close-btn {
+  background:      rgba(255, 255, 255, 0.08);
+  border:          1px solid rgba(255, 255, 255, 0.12);
+  color:           var(--clr-text-muted);
+  width:           30px;
+  height:          30px;
+  border-radius:   50%;
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  cursor:          pointer;
+  font-size:       0.85rem;
+  font-weight:     700;
+  transition:      var(--transition);
+}
+
+.feedback-close-btn:hover {
+  background:   rgba(232, 57, 30, 0.2);
+  color:        #fff;
+  border-color: rgba(232, 57, 30, 0.5);
+  transform:    scale(1.08);
+}
+
+.ai-feedback-body {
+  padding:        1.25rem 1.5rem;
+  display:        flex;
+  flex-direction: column;
+  gap:            1.35rem;
+}
+
+/* ── Banner: Score & Coach-Fazit ─────────────────────────── */
+.feedback-overview-banner {
+  display:       flex;
+  align-items:   center;
+  gap:           1.5rem;
+  background:    rgba(10, 12, 18, 0.55);
+  border:        1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius-md);
+  padding:       1.25rem 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .feedback-overview-banner {
+    flex-direction: column;
+    text-align:     center;
+  }
+}
+
+.feedback-score-badge {
+  display:        flex;
+  flex-direction: column;
+  align-items:    center;
+  gap:            0.4rem;
+  flex-shrink:    0;
+}
+
+.score-circle {
+  width:           86px;
+  height:          86px;
+  border-radius:   50%;
+  display:         flex;
+  flex-direction:  column;
+  align-items:     center;
+  justify-content: center;
+  border:          3px solid;
+  transition:      var(--transition);
+}
+
+.feedback-score-badge.score-high .score-circle {
+  border-color: #22c55e;
+  background:   rgba(34, 197, 94, 0.12);
+  box-shadow:   0 0 24px rgba(34, 197, 94, 0.25);
+  color:        #4ade80;
+}
+
+.feedback-score-badge.score-mid .score-circle {
+  border-color: #eab308;
+  background:   rgba(234, 179, 8, 0.12);
+  box-shadow:   0 0 24px rgba(234, 179, 8, 0.25);
+  color:        #facc15;
+}
+
+.feedback-score-badge.score-low .score-circle {
+  border-color: #ef4444;
+  background:   rgba(239, 68, 68, 0.12);
+  box-shadow:   0 0 24px rgba(239, 68, 68, 0.25);
+  color:        #f87171;
+}
+
+.score-number {
+  font-family: var(--font-display);
+  font-size:   2rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.score-max {
+  font-size:   0.75rem;
+  font-weight: 600;
+  opacity:     0.75;
+}
+
+.score-label {
+  font-size:      0.75rem;
+  font-weight:    700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color:          var(--clr-text-dim);
+}
+
+.feedback-summary-box {
+  flex: 1;
+}
+
+.feedback-summary-header {
+  margin-bottom: 0.4rem;
+}
+
+.summary-badge {
+  display:        inline-block;
+  font-size:      0.6875rem;
+  font-weight:    800;
+  color:          #38bdf8;
+  background:     rgba(56, 189, 248, 0.15);
+  border:         1px solid rgba(56, 189, 248, 0.35);
+  padding:        0.15rem 0.55rem;
+  border-radius:  99px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom:  0.35rem;
+}
+
+.feedback-summary-header h4 {
+  font-size:   1.05rem;
+  font-weight: 700;
+  color:       #fff;
+}
+
+.feedback-summary-text {
+  font-size:   0.92rem;
+  color:       #cbd5e1;
+  line-height: 1.6;
+}
+
+/* ── Sektionen & Überschriften ────────────────────────────── */
+.feedback-section-title {
+  font-size:      0.875rem;
+  font-weight:    700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color:          var(--clr-text-muted);
+  margin-bottom:  0.75rem;
+}
+
+/* ── 3-Disziplinen Grid ───────────────────────────────────── */
+.feedback-disciplines-grid {
+  display:               grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap:                   1rem;
+}
+
+@media (max-width: 900px) {
+  .feedback-disciplines-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.feedback-disc-card {
+  background:     var(--clr-surface-2);
+  border:         1px solid var(--clr-border);
+  border-radius:  var(--radius-md);
+  padding:        1rem 1.15rem;
+  display:        flex;
+  flex-direction: column;
+  gap:            0.6rem;
+  transition:     var(--transition);
+}
+
+.feedback-disc-card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  transform:    translateY(-2px);
+}
+
+.disc-card-header {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     center;
+  border-bottom:   1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom:  0.5rem;
+  gap:             0.5rem;
+}
+
+.disc-card-title {
+  display:     flex;
+  align-items: center;
+  gap:         0.45rem;
+  font-weight: 700;
+  font-size:   0.9375rem;
+  color:       var(--clr-text);
+}
+
+.disc-icon {
+  font-size: 1.15rem;
+}
+
+.disc-status-pill {
+  font-size:      0.6875rem;
+  font-weight:    700;
+  padding:        0.18rem 0.55rem;
+  border-radius:  99px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space:    nowrap;
+}
+
+.disc-status-pill.status-optimal {
+  background: rgba(34, 197, 94, 0.15);
+  color:      #4ade80;
+  border:     1px solid rgba(34, 197, 94, 0.35);
+}
+
+.disc-status-pill.status-warning {
+  background: rgba(234, 179, 8, 0.15);
+  color:      #facc15;
+  border:     1px solid rgba(234, 179, 8, 0.35);
+}
+
+.disc-status-pill.status-low {
+  background: rgba(14, 165, 233, 0.15);
+  color:      #38bdf8;
+  border:     1px solid rgba(14, 165, 233, 0.35);
+}
+
+.disc-card-comment {
+  font-size:   0.8125rem;
+  color:       var(--clr-text-dim);
+  line-height: 1.55;
+  margin:      0;
+}
+
+/* ── 2-Spalten: Stärken vs. Risiken ───────────────────────── */
+.feedback-details-cols {
+  display:               grid;
+  grid-template-columns: 1fr 1fr;
+  gap:                   1rem;
+}
+
+@media (max-width: 768px) {
+  .feedback-details-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+.feedback-col {
+  background:    var(--clr-surface-2);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+  padding:       1.15rem 1.25rem;
+  display:       flex;
+  flex-direction: column;
+  gap:           0.75rem;
+}
+
+.feedback-strengths {
+  border-left: 3px solid #22c55e;
+}
+
+.feedback-risks {
+  border-left: 3px solid #f59e0b;
+}
+
+.feedback-col h4 {
+  display:     flex;
+  align-items: center;
+  gap:         0.5rem;
+  font-size:   0.9375rem;
+  font-weight: 700;
+  color:       #fff;
+}
+
+.col-icon {
+  font-size: 1.1rem;
+}
+
+.feedback-bullet-list {
+  list-style:     none;
+  padding:        0;
+  margin:         0;
+  display:        flex;
+  flex-direction: column;
+  gap:            0.6rem;
+  font-size:      0.85rem;
+  line-height:    1.5;
+  color:          var(--clr-text-dim);
+}
+
+.feedback-bullet-list li {
+  position:     relative;
+  padding-left: 1.35rem;
+}
+
+.feedback-strengths .feedback-bullet-list li::before {
+  content:     "✓";
+  position:    absolute;
+  left:        0;
+  color:       #22c55e;
+  font-weight: 800;
+  font-size:   0.95rem;
+}
+
+.feedback-risks .feedback-bullet-list li::before {
+  content:     "!";
+  position:    absolute;
+  left:        0;
+  color:       #f59e0b;
+  font-weight: 800;
+  font-size:   0.95rem;
+}
+
+/* ── Handlungsempfehlungen Box ───────────────────────────── */
+.feedback-recommendations-box {
+  background:    linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(99, 102, 241, 0.08));
+  border:        1px solid rgba(14, 165, 233, 0.3);
+  border-radius: var(--radius-md);
+  padding:       1.25rem 1.5rem;
+  display:       flex;
+  flex-direction: column;
+  gap:           0.85rem;
+}
+
+.feedback-recommendations-box h4 {
+  display:     flex;
+  align-items: center;
+  gap:         0.5rem;
+  font-size:   0.95rem;
+  font-weight: 700;
+  color:       #38bdf8;
+}
+
+.feedback-recs-list {
+  margin:         0;
+  padding-left:   1.35rem;
+  display:        flex;
+  flex-direction: column;
+  gap:            0.65rem;
+  font-size:      0.875rem;
+  line-height:    1.55;
+  color:          #e2e8f0;
+}
+
+.feedback-recs-list li {
+  padding-left: 0.25rem;
+}
+
+.feedback-recs-list li::marker {
+  color:       #38bdf8;
+  font-weight: 700;
+}
+
 /* ============================================================
    REITER 3: HUB (COMMUNITY LEISTUNGSVERGLEICH)
    ============================================================ */
@@ -1245,12 +1662,75 @@ body {
 .hub-header-actions {
   display:     flex;
   align-items: center;
+  flex-wrap:   wrap;
   gap:         0.75rem;
 }
 
-.btn-active {
-  border-color: var(--clr-accent) !important;
-  color: var(--clr-accent) !important;
+.hub-timeframe-control {
+  display:         flex;
+  align-items:     center;
+  gap:             0.5rem;
+  background:      rgba(17, 20, 32, 0.85);
+  border:          1px solid var(--clr-border);
+  border-radius:   var(--radius-sm);
+  padding:         0.25rem 0.5rem 0.25rem 0.75rem;
+  transition:      var(--transition);
+}
+
+.hub-timeframe-control:hover,
+.hub-timeframe-control:focus-within {
+  border-color: var(--clr-border-focus);
+}
+
+.hub-timeframe-label {
+  display:       flex;
+  align-items:   center;
+  gap:           0.35rem;
+  font-size:     0.8125rem;
+  font-weight:   600;
+  color:         var(--clr-text-muted);
+  white-space:   nowrap;
+  cursor:        pointer;
+  margin-bottom: 0;
+}
+
+.hub-timeframe-icon {
+  font-size: 0.95rem;
+}
+
+.hub-timeframe-select {
+  background:    transparent;
+  border:        none;
+  color:         var(--clr-text);
+  font-size:     0.875rem;
+  font-weight:   600;
+  font-family:   var(--font-body);
+  padding:       0.35rem 0.5rem;
+  cursor:        pointer;
+  outline:       none;
+}
+
+.hub-timeframe-select:focus {
+  outline: none;
+}
+
+.hub-timeframe-select option {
+  background:    var(--clr-bg-card);
+  color:         var(--clr-text);
+}
+
+.badge-synced-days {
+  display:        inline-block;
+  font-size:      0.6875rem;
+  padding:        0.1rem 0.45rem;
+  border-radius:  9999px;
+  background:     rgba(245, 158, 11, 0.12);
+  color:          #fbbf24;
+  border:         1px solid rgba(245, 158, 11, 0.35);
+  margin-left:    0.4rem;
+  vertical-align: middle;
+  font-weight:    600;
+  letter-spacing: 0.02em;
 }
 
 .hub-single-user-banner {
@@ -1686,5 +2166,895 @@ body {
 .modal-desc strong {
   color: var(--clr-text);
 }
+
+/* ============================================================
+   KONTO PAGE: TRAININGSPLAN VIEWER & MANUELLER EDITOR
+   ============================================================ */
+
+.btn-sm {
+  padding:       0.4rem 0.85rem;
+  font-size:     0.8125rem;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Card Header & Actions ────────────────────────────────── */
+.account-plan-header {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     center;
+  flex-wrap:       wrap;
+  gap:             0.75rem;
+}
+
+.account-plan-header-actions {
+  display:     flex;
+  align-items: center;
+  gap:         1rem;
+  flex-wrap:   wrap;
+}
+
+/* ── 7-Tage-Grid (Anzeigemodus) ───────────────────────────── */
+.account-plan-grid {
+  display:               grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap:                   0.75rem;
+  margin-top:            0.5rem;
+}
+
+@media (max-width: 1280px) {
+  .account-plan-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .account-plan-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .account-plan-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.account-plan-day-card {
+  background:     var(--clr-surface-2);
+  border:         1px solid var(--clr-border);
+  border-radius:  var(--radius-md);
+  overflow:       hidden;
+  display:        flex;
+  flex-direction: column;
+  transition:     var(--transition);
+  position:       relative;
+  box-shadow:     0 2px 10px rgba(0, 0, 0, 0.25);
+}
+
+.account-plan-day-card:hover {
+  border-color: rgba(232, 57, 30, 0.4);
+  transform:    translateY(-2px);
+  box-shadow:   0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.account-plan-day-card.card-rest {
+  opacity:      0.75;
+  border-style: dashed;
+}
+
+.account-plan-day-card.card-rest:hover {
+  opacity: 1;
+}
+
+.day-card-top {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     center;
+  padding:         0.75rem 0.85rem 0.5rem;
+  border-bottom:   1px solid rgba(255, 255, 255, 0.04);
+}
+
+.day-label-short {
+  font-weight:    800;
+  font-size:      0.8125rem;
+  letter-spacing: 0.08em;
+  color:          var(--clr-text-muted);
+  text-transform: uppercase;
+}
+
+.day-discipline-icon {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.day-card-body {
+  padding:        0.75rem 0.85rem;
+  flex:           1;
+  display:        flex;
+  flex-direction: column;
+  gap:            0.5rem;
+}
+
+.day-badge-wrap {
+  display: flex;
+}
+
+.day-badge {
+  display:        inline-block;
+  font-size:      0.6875rem;
+  font-weight:    800;
+  letter-spacing: 0.05em;
+  padding:        0.2rem 0.55rem;
+  border-radius:  var(--radius-sm);
+  text-transform: uppercase;
+}
+
+.badge-ride {
+  background:   rgba(249, 115, 22, 0.15);
+  color:        #fb923c;
+  border:       1px solid rgba(249, 115, 22, 0.35);
+}
+
+.badge-swim {
+  background:   rgba(59, 130, 246, 0.15);
+  color:        #60a5fa;
+  border:       1px solid rgba(59, 130, 246, 0.35);
+}
+
+.badge-run {
+  background:   rgba(34, 197, 94, 0.15);
+  color:        #4ade80;
+  border:       1px solid rgba(34, 197, 94, 0.35);
+}
+
+.badge-rest {
+  background:   rgba(100, 116, 139, 0.15);
+  color:        #94a3b8;
+  border:       1px solid rgba(100, 116, 139, 0.3);
+}
+
+.badge-brick {
+  background:   rgba(168, 85, 247, 0.15);
+  color:        #c084fc;
+  border:       1px solid rgba(168, 85, 247, 0.35);
+}
+
+/* ── Subtype-Chips (Kombinierbare Trainingsarten) ──────────── */
+.day-subtype-pills {
+  display:   flex;
+  flex-wrap: wrap;
+  gap:       0.35rem;
+  margin:    0.15rem 0;
+}
+
+.subtype-pill {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           0.25rem;
+  font-size:     0.6875rem;
+  font-weight:   600;
+  background:    rgba(255, 255, 255, 0.06);
+  border:        1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 99px;
+  padding:       0.15rem 0.5rem;
+  color:         var(--clr-text);
+  line-height:   1.3;
+}
+
+.pill-icon {
+  font-size: 0.75rem;
+}
+
+/* ── Metriken (Dauer, Distanz, Speed/Pace) ────────────────── */
+.day-metrics-row {
+  display:        flex;
+  flex-direction: column;
+  gap:            0.25rem;
+  font-size:      0.75rem;
+  margin-top:     0.15rem;
+}
+
+.metric-pill {
+  background:    rgba(10, 12, 18, 0.45);
+  padding:       0.2rem 0.45rem;
+  border-radius: var(--radius-sm);
+  border:        1px solid rgba(255, 255, 255, 0.05);
+  font-weight:   600;
+  color:         var(--clr-text-dim);
+  display:       inline-flex;
+  align-items:   center;
+  gap:           0.3rem;
+  width:         fit-content;
+}
+
+.day-note-text {
+  font-size:          0.75rem;
+  line-height:        1.45;
+  color:              var(--clr-text-muted);
+  margin-top:         0.35rem;
+  display:            -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp:         3;
+  -webkit-box-orient: vertical;
+  overflow:           hidden;
+  font-style:         italic;
+  border-left:        2px solid var(--clr-border);
+  padding-left:       0.5rem;
+}
+
+.intensity-bar-footer {
+  height:     4px;
+  width:      100%;
+  margin-top: auto;
+}
+
+.intensity-easy {
+  background: #22c55e;
+}
+
+.intensity-moderate {
+  background: #eab308;
+}
+
+.intensity-hard {
+  background: var(--clr-accent);
+  box-shadow: 0 0 10px rgba(232, 57, 30, 0.5);
+}
+
+/* ── Coach-Notiz Banner ───────────────────────────────────── */
+.coach-note-banner {
+  background:    linear-gradient(135deg, rgba(102, 126, 234, 0.12), rgba(118, 75, 162, 0.12));
+  border:        1px solid rgba(102, 126, 234, 0.3);
+  border-radius: var(--radius-md);
+  padding:       1rem 1.25rem;
+  font-size:     0.875rem;
+  color:         #cbd5e1;
+  display:       flex;
+  flex-direction: column;
+  gap:           0.35rem;
+}
+
+.coach-title {
+  color:       #a5b4fc;
+  font-weight: 700;
+}
+
+/* ── Leere Plan-Anzeige ───────────────────────────────────── */
+.account-empty-plan {
+  background:    var(--clr-surface-2);
+  border:        1px dashed var(--clr-border);
+  border-radius: var(--radius-lg);
+  padding:       2.5rem 1.5rem;
+  text-align:    center;
+}
+
+/* ============================================================
+   MANUELLER TRAININGSPLAN-EDITOR (7 TAGE)
+   ============================================================ */
+
+.account-plan-editor-toolbar {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     center;
+  flex-wrap:       wrap;
+  gap:             0.75rem;
+  padding-bottom:  1rem;
+  border-bottom:   1px solid var(--clr-border);
+  margin-bottom:   1rem;
+}
+
+.editor-template-actions {
+  display:     flex;
+  align-items: center;
+  gap:         0.5rem;
+  flex-wrap:   wrap;
+}
+
+.editor-toolbar-label {
+  font-size:      0.8125rem;
+  font-weight:    600;
+  color:          var(--clr-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right:   0.25rem;
+}
+
+.editor-actions-top {
+  display:     flex;
+  align-items: center;
+  gap:         0.5rem;
+}
+
+.editor-helper-text {
+  font-size:     0.875rem;
+  color:         var(--clr-text-muted);
+  line-height:   1.5;
+  margin-bottom: 1.5rem;
+}
+
+.account-plan-editor-list {
+  display:        flex;
+  flex-direction: column;
+  gap:            1.25rem;
+}
+
+/* Einzelne Tageskarte im Editor */
+.plan-day-editor-card {
+  background:     var(--clr-surface-2);
+  border:         1px solid var(--clr-border);
+  border-radius:  var(--radius-lg);
+  padding:        1.25rem 1.5rem;
+  display:        flex;
+  flex-direction: column;
+  gap:            1.15rem;
+  box-shadow:     0 4px 16px rgba(0, 0, 0, 0.2);
+  transition:     var(--transition);
+}
+
+.plan-day-editor-card:focus-within {
+  border-color: rgba(232, 57, 30, 0.4);
+}
+
+.day-editor-header {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     center;
+  border-bottom:   1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom:  0.75rem;
+  flex-wrap:       wrap;
+  gap:             0.5rem;
+}
+
+.day-editor-title {
+  display:     flex;
+  align-items: center;
+  gap:         0.75rem;
+}
+
+.day-short-badge {
+  background:     var(--clr-accent);
+  color:          #fff;
+  font-weight:    800;
+  font-size:      0.75rem;
+  padding:        0.2rem 0.55rem;
+  border-radius:  var(--radius-sm);
+  letter-spacing: 0.05em;
+}
+
+.day-editor-title h4 {
+  font-size:      1.15rem;
+  font-weight:    700;
+  color:          var(--clr-text);
+  margin:         0;
+  letter-spacing: 0.02em;
+}
+
+.day-editor-header-actions {
+  display:     flex;
+  align-items: center;
+  gap:         0.65rem;
+  flex-wrap:   wrap;
+}
+
+/* ── Lock-Button für fixierte Tage ────────────────────────── */
+.day-lock-btn {
+  display:         inline-flex;
+  align-items:     center;
+  gap:             0.35rem;
+  padding:         0.3rem 0.75rem;
+  background:      rgba(255, 255, 255, 0.04);
+  border:          1px solid var(--clr-border);
+  border-radius:   99px;
+  color:           var(--clr-text-muted);
+  font-family:     var(--font-body);
+  font-size:       0.75rem;
+  font-weight:     600;
+  cursor:          pointer;
+  transition:      var(--transition);
+  user-select:     none;
+}
+
+.day-lock-btn:hover {
+  background:   rgba(255, 255, 255, 0.08);
+  color:        var(--clr-text);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.day-lock-btn.is-locked {
+  background:   rgba(234, 179, 8, 0.18);
+  border-color: rgba(234, 179, 8, 0.55);
+  color:        #fef08a;
+  box-shadow:   0 0 14px rgba(234, 179, 8, 0.3);
+}
+
+.day-lock-btn .lock-icon {
+  font-size:   0.85rem;
+  line-height: 1;
+}
+
+.day-lock-btn .lock-label {
+  letter-spacing: 0.02em;
+}
+
+.plan-day-editor-card.is-locked {
+  border-color: rgba(234, 179, 8, 0.35);
+  box-shadow:   0 4px 20px rgba(234, 179, 8, 0.08);
+}
+
+.day-top-right,
+.day-card-header-icons {
+  display:     flex;
+  align-items: center;
+  gap:         0.45rem;
+}
+
+.day-locked-pill {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  font-size:       0.75rem;
+  padding:         0.15rem 0.4rem;
+  background:      rgba(234, 179, 8, 0.18);
+  border:          1px solid rgba(234, 179, 8, 0.45);
+  border-radius:   99px;
+  color:           #fde047;
+  cursor:          help;
+  line-height:     1;
+  transition:      var(--transition);
+}
+
+.day-current-type-badge {
+  font-size:     0.8125rem;
+  font-weight:   700;
+  padding:       0.25rem 0.75rem;
+  border-radius: 99px;
+  display:       inline-flex;
+  align-items:   center;
+  gap:           0.4rem;
+}
+
+.day-editor-row {
+  display:        flex;
+  flex-direction: column;
+}
+
+.editor-field-label {
+  display:        block;
+  font-size:      0.8125rem;
+  font-weight:    600;
+  color:          var(--clr-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom:  0.5rem;
+}
+
+/* ── Disziplin-Auswahl Buttons ────────────────────────────── */
+.discipline-btn-group {
+  display:   flex;
+  flex-wrap: wrap;
+  gap:       0.5rem;
+}
+
+.discipline-select-btn {
+  display:         inline-flex;
+  align-items:     center;
+  gap:             0.4rem;
+  padding:         0.55rem 1rem;
+  background:      var(--clr-surface);
+  border:          1px solid var(--clr-border);
+  border-radius:   var(--radius-sm);
+  color:           var(--clr-text-muted);
+  font-family:     var(--font-body);
+  font-size:       0.875rem;
+  font-weight:     600;
+  cursor:          pointer;
+  transition:      var(--transition);
+  user-select:     none;
+}
+
+.discipline-select-btn:hover {
+  background:   rgba(255, 255, 255, 0.05);
+  color:        var(--clr-text);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.discipline-select-btn .disc-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.discipline-select-btn .disc-check {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  width:           18px;
+  height:          18px;
+  font-size:       0.7rem;
+  border-radius:   50%;
+  background:      rgba(255, 255, 255, 0.12);
+  margin-left:     0.25rem;
+  font-weight:     700;
+  line-height:     1;
+  transition:      var(--transition);
+}
+
+.discipline-select-btn.active .disc-check {
+  background: rgba(255, 255, 255, 0.35);
+  color:      #fff;
+}
+
+.discipline-select-btn.active {
+  color:        #fff;
+  font-weight:  700;
+  transform:    translateY(-1px);
+}
+
+.discipline-select-btn.active.badge-ride {
+  background:   linear-gradient(135deg, #f97316, #ea580c);
+  border-color: #f97316;
+  box-shadow:   0 0 16px rgba(249, 115, 22, 0.45);
+}
+
+.discipline-select-btn.active.badge-swim {
+  background:   linear-gradient(135deg, #3b82f6, #2563eb);
+  border-color: #3b82f6;
+  box-shadow:   0 0 16px rgba(59, 130, 246, 0.45);
+}
+
+.discipline-select-btn.active.badge-run {
+  background:   linear-gradient(135deg, #22c55e, #16a34a);
+  border-color: #22c55e;
+  box-shadow:   0 0 16px rgba(34, 197, 94, 0.45);
+}
+
+.discipline-select-btn.active.badge-rest {
+  background:   linear-gradient(135deg, #475569, #334155);
+  border-color: #64748b;
+  box-shadow:   0 0 16px rgba(100, 116, 139, 0.35);
+}
+
+.discipline-select-btn.active.badge-brick {
+  background:   linear-gradient(135deg, #a855f7, #9333ea);
+  border-color: #a855f7;
+  box-shadow:   0 0 16px rgba(168, 85, 247, 0.45);
+}
+
+/* ── Container für Unterarten je Disziplin ────────────────── */
+.discipline-subtypes-container {
+  display:        flex;
+  flex-direction: column;
+  gap:            0.75rem;
+}
+
+.discipline-subtypes-section {
+  background:    rgba(10, 12, 18, 0.35);
+  border:        1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  padding:       0.75rem 0.85rem;
+  display:       flex;
+  flex-direction: column;
+  gap:           0.5rem;
+}
+
+.disc-section-title {
+  display:     flex;
+  align-items: center;
+  gap:         0.5rem;
+  flex-wrap:   wrap;
+}
+
+.disc-mini-badge {
+  font-size:      0.6875rem;
+  font-weight:    700;
+  padding:        0.15rem 0.5rem;
+  border-radius:  99px;
+  display:        inline-flex;
+  align-items:    center;
+  gap:            0.25rem;
+  letter-spacing: 0.02em;
+}
+
+.disc-mini-badge.badge-ride  { background: rgba(249, 115, 22, 0.2); border: 1px solid #f97316; color: #fb923c; }
+.disc-mini-badge.badge-run   { background: rgba(34, 197, 94, 0.2);  border: 1px solid #22c55e; color: #4ade80; }
+.disc-mini-badge.badge-swim  { background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; color: #60a5fa; }
+.disc-mini-badge.badge-rest  { background: rgba(100, 116, 139, 0.2); border: 1px solid #64748b; color: #94a3b8; }
+.disc-mini-badge.badge-brick { background: rgba(168, 85, 247, 0.2); border: 1px solid #a855f7; color: #c084fc; }
+
+.disc-section-subtitle {
+  font-size:  0.75rem;
+  color:      var(--clr-text-muted);
+  font-style: italic;
+}
+
+/* ── Subtype-Toggle-Buttons (Kombinierbare Arten) ──────────── */
+.subtype-chips-group {
+  display:   flex;
+  flex-wrap: wrap;
+  gap:       0.5rem;
+}
+
+.subtype-toggle-btn {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           0.4rem;
+  padding:       0.45rem 0.9rem;
+  background:    var(--clr-surface);
+  border:        1px solid var(--clr-border);
+  border-radius: 99px;
+  color:         var(--clr-text-muted);
+  font-family:   var(--font-body);
+  font-size:     0.8125rem;
+  font-weight:   500;
+  cursor:        pointer;
+  transition:    var(--transition);
+  user-select:   none;
+}
+
+.subtype-toggle-btn:hover {
+  background:   rgba(255, 255, 255, 0.06);
+  color:        var(--clr-text);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.subtype-toggle-btn .subtype-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.subtype-toggle-btn.active {
+  background:   rgba(232, 57, 30, 0.15);
+  color:        #fca5a5;
+  border-color: var(--clr-accent);
+  font-weight:  700;
+  box-shadow:   0 0 14px var(--clr-accent-glow);
+  transform:    translateY(-1px);
+}
+
+/* ── Einstellungen-Grid (Dauer, Distanz, Speed, Intensität) ─ */
+.day-settings-grid {
+  display:               grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap:                   0.75rem;
+}
+
+@media (max-width: 900px) {
+  .day-settings-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .day-settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.form-group-sm {
+  display:        flex;
+  flex-direction: column;
+  gap:            0.35rem;
+}
+
+.form-group-sm label {
+  font-size:      0.75rem;
+  font-weight:    600;
+  color:          var(--clr-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.plan-input,
+.plan-select,
+.plan-textarea {
+  background:    var(--clr-surface);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-sm);
+  padding:       0.6rem 0.75rem;
+  color:         var(--clr-text);
+  font-family:   var(--font-body);
+  font-size:     0.875rem;
+  transition:    var(--transition);
+  width:         100%;
+  outline:       none;
+}
+
+.plan-input:focus,
+.plan-select:focus,
+.plan-textarea:focus {
+  border-color: var(--clr-accent);
+  box-shadow:   0 0 0 2px var(--clr-accent-glow);
+}
+
+.plan-input::placeholder,
+.plan-textarea::placeholder {
+  color: var(--clr-text-muted);
+}
+
+.plan-textarea {
+  resize:     vertical;
+  min-height: 52px;
+  line-height: 1.45;
+}
+
+.form-textarea {
+  width:         100%;
+  background:    var(--clr-surface-2);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-sm);
+  padding:       0.75rem 1rem;
+  color:         var(--clr-text);
+  font-family:   var(--font-body);
+  font-size:     0.9375rem;
+  resize:        vertical;
+  min-height:    64px;
+  outline:       none;
+  transition:    var(--transition);
+  line-height:   1.5;
+}
+
+.form-textarea:focus {
+  border-color: var(--clr-accent);
+  box-shadow:   0 0 0 3px var(--clr-accent-glow);
+}
+
+/* ── Einstellungen je ausgewählter Art im Editor ──────────── */
+.subtype-parts-editor-list {
+  display:        flex;
+  flex-direction: column;
+  gap:            0.875rem;
+  margin-top:     0.25rem;
+}
+
+.subtype-part-editor-card {
+  background:       rgba(10, 12, 18, 0.45);
+  border:           1px solid rgba(255, 255, 255, 0.08);
+  border-left:      3px solid var(--clr-accent);
+  border-radius:    var(--radius-sm);
+  padding:          0.85rem 1rem;
+  display:          flex;
+  flex-direction:   column;
+  gap:              0.65rem;
+  transition:       var(--transition);
+}
+
+.subtype-part-editor-card.disc-border-ride { border-left-color: #f97316; }
+.subtype-part-editor-card.disc-border-run  { border-left-color: #22c55e; }
+.subtype-part-editor-card.disc-border-swim { border-left-color: #3b82f6; }
+.subtype-part-editor-card.disc-border-rest { border-left-color: #64748b; }
+
+.subtype-part-editor-card:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.subtype-part-card-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  flex-wrap:       wrap;
+  gap:             0.5rem;
+}
+
+.part-card-badge {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           0.4rem;
+  font-size:     0.8125rem;
+  font-weight:   700;
+  color:         #fff;
+  background:    rgba(232, 57, 30, 0.15);
+  border:        1px solid var(--clr-accent-glow);
+  padding:       0.2rem 0.65rem;
+  border-radius: 99px;
+}
+
+.part-card-badge.badge-ride {
+  background:   rgba(249, 115, 22, 0.15);
+  border-color: rgba(249, 115, 22, 0.4);
+  color:        #fb923c;
+}
+
+.part-card-badge.badge-run {
+  background:   rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.4);
+  color:        #4ade80;
+}
+
+.part-card-badge.badge-swim {
+  background:   rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+  color:        #60a5fa;
+}
+
+.part-card-badge.badge-rest {
+  background:   rgba(100, 116, 139, 0.15);
+  border-color: rgba(100, 116, 139, 0.4);
+  color:        #cbd5e1;
+}
+
+.part-card-icon {
+  font-size: 0.95rem;
+}
+
+.part-card-hint {
+  font-size:  0.75rem;
+  color:      var(--clr-text-muted);
+  font-style: italic;
+}
+
+/* ── Aufteilung der Aktivitäten in der Plan-Ansicht ──────── */
+.day-parts-view-list {
+  display:        flex;
+  flex-direction: column;
+  gap:            0.45rem;
+  margin:         0.25rem 0;
+}
+
+.day-part-item {
+  background:    rgba(10, 12, 18, 0.4);
+  border:        1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  padding:       0.45rem 0.6rem;
+  display:       flex;
+  flex-direction: column;
+  gap:           0.3rem;
+}
+
+.part-item-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  gap:             0.35rem;
+}
+
+.part-mini-intensity {
+  font-size:      0.625rem;
+  font-weight:    800;
+  padding:        0.1rem 0.35rem;
+  border-radius:  3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color:          #fff;
+}
+
+.part-mini-intensity.intensity-easy {
+  background: #16a34a;
+}
+
+.part-mini-intensity.intensity-moderate {
+  background: #ca8a04;
+}
+
+.part-mini-intensity.intensity-hard {
+  background: var(--clr-accent);
+}
+
+.part-metrics-subline {
+  display:     flex;
+  flex-wrap:   wrap;
+  gap:         0.35rem;
+  font-size:   0.7125rem;
+  font-family: monospace;
+}
+
+.metric-mini {
+  background:    rgba(0, 0, 0, 0.25);
+  padding:       0.12rem 0.35rem;
+  border-radius: 3px;
+  border:        1px solid rgba(255, 255, 255, 0.04);
+  color:         var(--clr-text-dim);
+}
+
+.day-total-badge {
+  font-size:     0.725rem;
+  font-weight:   700;
+  color:         var(--clr-accent);
+  padding:       0.2rem 0.45rem;
+  background:    rgba(232, 57, 30, 0.08);
+  border-radius: var(--radius-sm);
+  margin-top:    0.2rem;
+  width:         fit-content;
+}
+
+
 
 

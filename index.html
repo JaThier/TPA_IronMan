@@ -178,9 +178,14 @@
                 </div>
               </div>
 
-              <button id="ai-adjust-btn" class="btn btn-ai" aria-label="Trainingsplan von KI anpassen lassen">
-                🤖 Plan von KI anpassen lassen
-              </button>
+              <div class="ai-button-group">
+                <button type="button" id="ai-feedback-btn" class="btn btn-ai-feedback" aria-label="Trainingsplan von KI analysieren lassen und Feedback einholen">
+                  🔍 Plan analysieren &amp; Feedback
+                </button>
+                <button type="button" id="ai-adjust-btn" class="btn btn-ai" aria-label="Trainingsplan von KI anpassen lassen">
+                  🤖 Plan von KI anpassen lassen
+                </button>
+              </div>
             </div>
 
             <!-- Vorschau über gefilterte Aktivitäten -->
@@ -190,6 +195,23 @@
 
             <!-- KI-Statusanzeige -->
             <div id="ai-status" class="hidden" role="status" aria-live="polite"></div>
+          </div>
+        </div>
+
+        <!-- ── KI-Feedback & Analyse Card (Dynamisch nach Analyse befüllt) ── -->
+        <div id="ai-feedback-card" class="card ai-feedback-card hidden" style="margin-bottom: 1.5rem;" aria-live="polite">
+          <div class="card-header ai-feedback-header">
+            <div class="card-title">
+              <span class="icon" aria-hidden="true">💡</span>
+              <h3 id="ai-feedback-title">KI-Analyse &amp; Feedback zum aktuellen Trainingsplan</h3>
+            </div>
+            <div class="feedback-meta-actions">
+              <span id="ai-feedback-meta" class="plan-meta text-muted"></span>
+              <button type="button" id="ai-feedback-close-btn" class="feedback-close-btn" aria-label="Feedback schließen">✕</button>
+            </div>
+          </div>
+          <div class="ai-feedback-body" id="ai-feedback-content">
+            <!-- Wird per gemini.js befüllt -->
           </div>
         </div>
 
@@ -252,9 +274,19 @@
           </div>
 
           <div class="hub-header-actions">
-            <button id="demo-toggle-btn" class="btn btn-secondary">
-              👥 Demo-Crew einblenden
-            </button>
+            <div class="hub-timeframe-control">
+              <label for="hub-timeframe-select" class="hub-timeframe-label">
+                <span class="hub-timeframe-icon" aria-hidden="true">⏱️</span> Zeitraum:
+              </label>
+              <select id="hub-timeframe-select" class="form-select hub-timeframe-select" aria-label="Betrachteter Zeitraum für Leistungsvergleich">
+                <option value="7d" selected>1 Woche</option>
+                <option value="14d">2 Wochen</option>
+                <option value="30d">1 Monat</option>
+                <option value="60d">2 Monate</option>
+                <option value="180d">6 Monate</option>
+                <option value="365d">Jahr</option>
+              </select>
+            </div>
             <button id="hub-refresh-btn" class="btn btn-primary" style="width: auto;">
               🔄 Hub aktualisieren
             </button>
@@ -321,6 +353,94 @@
             </form>
 
           </div>
+
+          <!-- ── Trainingsplan-Bereich auf der Konto-Seite ── -->
+          <div class="card account-plan-card" id="account-plan-card" style="margin-top: 1.5rem;">
+
+            <div class="card-header account-plan-header">
+              <div class="card-title">
+                <span class="icon" aria-hidden="true">📋</span>
+                <h3 id="account-plan-title">Mein aktueller Trainingsplan</h3>
+              </div>
+              <div class="account-plan-header-actions">
+                <span id="account-plan-status-badge" class="plan-meta text-muted" aria-live="polite">
+                  Lade Trainingsplan…
+                </span>
+                <button type="button" id="account-plan-toggle-mode-btn" class="btn btn-secondary btn-sm" style="width: auto;">
+                  <span class="btn-icon">✏️</span> <span id="account-plan-toggle-text">Plan bearbeiten</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Modus 1: Anzeige-Ansicht (Standard) -->
+            <div id="account-plan-view-container">
+              <!-- Coach-Notiz / Wochenfokus -->
+              <div id="account-plan-coach-note-box" class="coach-note-banner hidden" style="margin-bottom: 1.25rem;">
+                <strong class="coach-title">💬 Notiz &amp; Wochenfokus:</strong>
+                <span id="account-plan-coach-note-text"></span>
+              </div>
+
+              <!-- 7-Tage-Übersicht -->
+              <div id="account-plan-days-grid" class="account-plan-grid" role="list" aria-label="Wochentrainingsplan Übersicht">
+                <div class="empty-plan-placeholder">
+                  <div class="spinner"></div>
+                  <span>Lade aktuellen Trainingsplan…</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modus 2: Manueller Editor (Initial ausgeblendet) -->
+            <div id="account-plan-edit-container" class="hidden">
+              <div class="account-plan-editor-toolbar">
+                <div class="editor-template-actions">
+                  <span class="editor-toolbar-label">Schnell-Vorlagen:</span>
+                  <button type="button" id="btn-template-ironman" class="btn btn-secondary btn-sm" title="Ausgewogene Ironman-Trainingswoche laden">
+                    ⚡ Ironman-Vorlage
+                  </button>
+                  <button type="button" id="btn-template-reset" class="btn btn-secondary btn-sm" title="Alle Tage auf Ruhetag setzen">
+                    🧹 Alle Ruhetag
+                  </button>
+                </div>
+                <div class="editor-actions-top">
+                  <button type="button" id="account-plan-cancel-btn-top" class="btn btn-secondary btn-sm">
+                    Abbrechen
+                  </button>
+                  <button type="button" id="account-plan-save-btn-top" class="btn btn-primary btn-sm">
+                    💾 Speichern
+                  </button>
+                </div>
+              </div>
+
+              <p class="editor-helper-text">
+                Wähle für jeden Wochentag eine oder mehrere Disziplinen (z. B. <em>Rad + Laufen</em> für Koppeltraining). Der <strong>Ruhetag</strong> deaktiviert automatisch die Sportarten. Für jede gewählte Disziplin lassen sich die Trainingsarten frei wählen und deren Parameter (Dauer, Distanz, Tempo, Intensität) individuell festlegen.
+              </p>
+
+              <!-- 7 Tage Eingabemasken (Montag - Sonntag) -->
+              <div id="account-plan-editor-days" class="account-plan-editor-list">
+                <!-- Dynamisch via account.js befüllt -->
+              </div>
+
+              <!-- Allgemeiner Wochenfokus / Notiz -->
+              <div class="form-group" style="margin-top: 1.5rem;">
+                <label for="account-plan-edit-coachnote">
+                  💬 Wochenfokus / Sonstige Infos für die gesamte Woche (optional)
+                </label>
+                <textarea id="account-plan-edit-coachnote" rows="2" class="form-textarea"
+                  placeholder="z. B. Grundlagenwoche mit Fokus auf saubere Trittfrequenz und Erholung."></textarea>
+              </div>
+
+              <!-- Formular-Aktionen unten -->
+              <div class="account-form-actions" style="margin-top: 1.5rem;">
+                <button type="button" id="account-plan-cancel-btn" class="btn btn-secondary" style="width: auto;">
+                  Abbrechen
+                </button>
+                <button type="button" id="account-plan-save-btn" class="btn btn-primary" style="width: auto;">
+                  💾 Trainingsplan speichern &amp; übernehmen
+                </button>
+              </div>
+            </div>
+
+          </div>
         </section>
 
     </main>
@@ -358,7 +478,7 @@
   <div id="toast-container" aria-live="assertive" aria-atomic="true"></div>
 
   <!-- JavaScript Module Entry -->
-  <script type="module" src="js/auth.js"></script>
+  <script type="module" src="js/auth.js?v=2.5"></script>
 
 </body>
 

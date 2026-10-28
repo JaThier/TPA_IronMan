@@ -636,7 +636,10 @@ function renderAccountPlanView(plan) {
         <div class="account-plan-day-card ${isRest ? 'card-rest' : ''}">
           <div class="day-card-top">
             <span class="day-label-short">${dayConf.short}</span>
-            <span class="day-discipline-icon" aria-hidden="true">${topIcons}</span>
+            <div class="day-top-right">
+              ${day.locked ? `<span class="day-locked-pill" title="Disziplin ist für die KI-Generierung fixiert">🔒</span>` : ''}
+              <span class="day-discipline-icon" aria-hidden="true">${topIcons}</span>
+            </div>
           </div>
 
           <div class="day-card-body">
@@ -665,7 +668,8 @@ function initEditorDayFromPlanDay(tpl) {
       disciplines: ["rest"],
       subtypesByDisc: { rest: ["ruhe"] },
       parts: { rest_ruhe: { duration: 0, distance: "", speed: "", intensity: "easy" } },
-      notes: ""
+      notes: "",
+      locked: false
     };
   }
 
@@ -765,7 +769,8 @@ function initEditorDayFromPlanDay(tpl) {
     disciplines,
     subtypesByDisc,
     parts: partsObj,
-    notes: tpl.notes || tpl.description || ""
+    notes: tpl.notes || tpl.description || "",
+    locked: Boolean(tpl.locked)
   };
 }
 
@@ -820,10 +825,11 @@ function toggleAccountPlanMode() {
  */
 function renderDayEditorCard(dayKey) {
   const dayConf = PLAN_WEEKDAY_CONFIG[dayKey];
-  const state = editorState[dayKey] || { disciplines: ["rest"], subtypesByDisc: { rest: ["ruhe"] }, parts: {}, notes: "" };
+  const state = editorState[dayKey] || { disciplines: ["rest"], subtypesByDisc: { rest: ["ruhe"] }, parts: {}, notes: "", locked: false };
   const disciplines = (state.disciplines && state.disciplines.length > 0) ? state.disciplines : ["rest"];
   const isMulti = disciplines.length > 1;
   const isRest = disciplines.length === 1 && disciplines[0] === "rest";
+  const isLocked = Boolean(state.locked);
 
   // Badges oben rechts in der Tageskarte
   let headerBadgeHtml = "";
@@ -1007,13 +1013,20 @@ function renderDayEditorCard(dayKey) {
   });
 
   return `
-    <div class="plan-day-editor-card" id="editor-day-${dayKey}" data-day="${dayKey}">
+    <div class="plan-day-editor-card ${isLocked ? 'is-locked' : ''}" id="editor-day-${dayKey}" data-day="${dayKey}">
       <div class="day-editor-header">
         <div class="day-editor-title">
           <span class="day-short-badge">${dayConf.short}</span>
           <h4>${dayConf.full}</h4>
         </div>
-        ${headerBadgeHtml}
+        <div class="day-editor-header-actions">
+          <button type="button" class="day-lock-btn ${isLocked ? 'is-locked' : ''}" data-day="${dayKey}"
+            title="${isLocked ? 'Disziplin ist für die KI-Generierung fixiert (Klick zum Entsperren)' : 'Disziplin für die KI-Generierung fixieren (Klick zum Sperren)'}">
+            <span class="lock-icon">${isLocked ? '🔒' : '🔓'}</span>
+            <span class="lock-label">${isLocked ? 'Fixiert' : 'Frei'}</span>
+          </button>
+          ${headerBadgeHtml}
+        </div>
       </div>
 
       <div class="day-editor-row">
@@ -1218,7 +1231,8 @@ async function saveAccountPlan() {
         speed: speeds.join(" • "),
         intensity: maxIntensity,
         description,
-        notes: st.notes?.trim() || ""
+        notes: st.notes?.trim() || "",
+        locked: Boolean(st.locked)
       };
     }
 
@@ -1324,8 +1338,23 @@ function setupAccountPlanListeners() {
       }
     });
 
-    // Click Delegation (Disziplin-Buttons & Subtype-Chips)
+    // Click Delegation (Disziplin-Buttons, Subtype-Chips & Lock-Button)
     editorList.addEventListener("click", (e) => {
+      const lockBtn = e.target.closest(".day-lock-btn");
+      if (lockBtn) {
+        const dayKey = lockBtn.dataset.day;
+        if (!dayKey || !editorState[dayKey]) return;
+        editorState[dayKey].locked = !editorState[dayKey].locked;
+        updateDayEditorCard(dayKey);
+        showToast(
+          editorState[dayKey].locked
+            ? `🔒 ${PLAN_WEEKDAY_CONFIG[dayKey].full} fixiert – Disziplin bleibt bei KI-Generierung erhalten!`
+            : `🔓 ${PLAN_WEEKDAY_CONFIG[dayKey].full} freigegeben für KI-Generierung.`,
+          "info"
+        );
+        return;
+      }
+
       const discBtn = e.target.closest(".discipline-select-btn");
       if (discBtn) {
         const dayKey = discBtn.dataset.day;

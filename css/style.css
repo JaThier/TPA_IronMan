@@ -2529,6 +2529,80 @@ body {
   letter-spacing: 0.02em;
 }
 
+.day-editor-header-actions {
+  display:     flex;
+  align-items: center;
+  gap:         0.65rem;
+  flex-wrap:   wrap;
+}
+
+/* ── Lock-Button für fixierte Tage ────────────────────────── */
+.day-lock-btn {
+  display:         inline-flex;
+  align-items:     center;
+  gap:             0.35rem;
+  padding:         0.3rem 0.75rem;
+  background:      rgba(255, 255, 255, 0.04);
+  border:          1px solid var(--clr-border);
+  border-radius:   99px;
+  color:           var(--clr-text-muted);
+  font-family:     var(--font-body);
+  font-size:       0.75rem;
+  font-weight:     600;
+  cursor:          pointer;
+  transition:      var(--transition);
+  user-select:     none;
+}
+
+.day-lock-btn:hover {
+  background:   rgba(255, 255, 255, 0.08);
+  color:        var(--clr-text);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.day-lock-btn.is-locked {
+  background:   rgba(234, 179, 8, 0.18);
+  border-color: rgba(234, 179, 8, 0.55);
+  color:        #fef08a;
+  box-shadow:   0 0 14px rgba(234, 179, 8, 0.3);
+}
+
+.day-lock-btn .lock-icon {
+  font-size:   0.85rem;
+  line-height: 1;
+}
+
+.day-lock-btn .lock-label {
+  letter-spacing: 0.02em;
+}
+
+.plan-day-editor-card.is-locked {
+  border-color: rgba(234, 179, 8, 0.35);
+  box-shadow:   0 4px 20px rgba(234, 179, 8, 0.08);
+}
+
+.day-top-right,
+.day-card-header-icons {
+  display:     flex;
+  align-items: center;
+  gap:         0.45rem;
+}
+
+.day-locked-pill {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  font-size:       0.75rem;
+  padding:         0.15rem 0.4rem;
+  background:      rgba(234, 179, 8, 0.18);
+  border:          1px solid rgba(234, 179, 8, 0.45);
+  border-radius:   99px;
+  color:           #fde047;
+  cursor:          help;
+  line-height:     1;
+  transition:      var(--transition);
+}
+
 .day-current-type-badge {
   font-size:     0.8125rem;
   font-weight:   700;

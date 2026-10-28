@@ -378,9 +378,11 @@ function formatPlanForFeedbackPrompt(plan) {
     const day = week[dayKey];
     const dayLabel = WEEKDAY_DE[dayKey] || dayKey;
     const isRest = !day || day.type === "rest" || (Array.isArray(day.disciplines) && day.disciplines.length === 1 && day.disciplines[0] === "rest");
+    const lockNote = day?.locked ? " [🔒 FIXIERT / GESPERRT]" : "";
+
     if (!day || isRest) {
       const note = day?.notes || day?.description;
-      return `${dayLabel}: Ruhetag${note ? ` (${note})` : ""}`;
+      return `${dayLabel}${lockNote}: Ruhetag${note ? ` (${note})` : ""}`;
     }
 
     let typeStr = (day.type || "Aktivität").toUpperCase();
@@ -403,7 +405,7 @@ function formatPlanForFeedbackPrompt(plan) {
     if (day.speed) metaParts.push(`Tempo: ${day.speed}`);
     if (day.intensity) metaParts.push(`Intensität: ${day.intensity}`);
 
-    let text = `${dayLabel}: ${typeStr} (${metaParts.join(" • ")})`;
+    let text = `${dayLabel}${lockNote}: ${typeStr} (${metaParts.join(" • ")})`;
     const note = day.notes || day.description;
     if (note) text += `\n  Notiz/Fokus: ${note}`;
 
@@ -698,6 +700,31 @@ function buildPrompt(currentPlan, activities, timeframeDays) {
   const actsSummary = formatActivitiesForFeedbackPrompt(activities, timeframeDays);
   const currentPlanStr = formatPlanForFeedbackPrompt(currentPlan);
 
+  // Fixierte Tage erfassen
+  const lockedDaysList = [];
+  if (currentPlan?.weekPlan) {
+    for (const [dKey, dObj] of Object.entries(currentPlan.weekPlan)) {
+      if (dObj?.locked) {
+        const dLabel = WEEKDAY_DE[dKey] || dKey;
+        const discs = Array.isArray(dObj.disciplines) && dObj.disciplines.length > 0
+          ? dObj.disciplines.map(d => ({ ride: "Rad", run: "Laufen", swim: "Schwimmen", rest: "Ruhetag" }[d] || d)).join(" + ")
+          : (dObj.type || "Ruhetag");
+        const rawDiscs = Array.isArray(dObj.disciplines) && dObj.disciplines.length > 0
+          ? dObj.disciplines
+          : [dObj.type || "rest"];
+        lockedDaysList.push(`- **${dLabel}** (${dKey}): Fixierte Disziplin(en) = ${discs} (disciplines: ${JSON.stringify(rawDiscs)})`);
+      }
+    }
+  }
+
+  const lockedSection = lockedDaysList.length > 0
+    ? `\n## 🔒 FIXIERTE TAGE DES ATHLETEN (HÖCHSTE PRIORITÄT!)
+Der Athlet hat für folgende Wochentage ein LOCK gesetzt. Für diese Tage MUSST du zwingend die exakt vorgegebenen Disziplinen beibehalten!
+Du darfst diese Tage weder in eine andere Sportart noch in Ruhetag umwandeln (oder umgekehrt).
+Pass die Abschnitte (parts), Distanzen, Intensitäten und Notizen gerne optimal an, aber die Disziplin(en) sind unantastbar:
+${lockedDaysList.join("\n")}\n`
+    : "";
+
   return `Du bist ein hochqualifizierter Triathlon-Headcoach (Ironman-Spezialist für Langdistanz: 3,8 km Schwimmen, 180 km Radfahren, 42,2 km Laufen).
 Analysiere die Trainingshistorie des Athleten aus den letzten ${timeframeDays} Tagen und erstelle einen neuen, detailgenauen und perfekt abgestimmten Wochenplan für die kommende Woche.
 
@@ -707,7 +734,7 @@ ${actsSummary}
 
 ## Bisheriger Trainingsplan
 ${currentPlanStr}
-
+${lockedSection}
 ## Trainingsphilosophie für den Ironman
 1. **Belastungssteuerung & Erholung**: Mindestens 1 echter Ruhetag pro Woche (z. B. Montag). Ruhetage dienen der Superkompensation.
 2. **Triathlon-Spezifik**: Am Wochenende ist mindestens 1 Koppeleinheit (Brick: Radfahren gefolgt von einem Koppellauf) oder ein langer Lauf (Longrun) einzuplanen.
@@ -1007,10 +1034,16 @@ function normalizePlanFromAI(rawPlan) {
 
   for (const dayKey of WEEKDAYS) {
     const rawDay = rawWeek[dayKey] || { type: "rest" };
+    const existingDay = currentPlan?.weekPlan?.[dayKey];
+    const isLocked = Boolean(existingDay?.locked || rawDay.locked);
 
     // 1. Disziplinen validieren & bereinigen
     let disciplines = [];
-    if (Array.isArray(rawDay.disciplines) && rawDay.disciplines.length > 0) {
+    if (isLocked && existingDay?.disciplines && Array.isArray(existingDay.disciplines) && existingDay.disciplines.length > 0) {
+      // 🔒 Wenn fixiert: Die Disziplin(en) des Athleten haben absolute Priorität!
+      disciplines = existingDay.disciplines.filter(d => AI_PLAN_CATALOG[d]);
+      if (disciplines.length === 0) disciplines = ["rest"];
+    } else if (Array.isArray(rawDay.disciplines) && rawDay.disciplines.length > 0) {
       for (const d of rawDay.disciplines) {
         if (d === "brick") {
           if (!disciplines.includes("ride")) disciplines.push("ride");
@@ -1166,7 +1199,8 @@ function normalizePlanFromAI(rawPlan) {
       speed: totalSpeed,
       intensity: totalIntensity,
       description: rawDay.description || (disciplines.length > 1 ? "Koppeltraining" : (AI_PLAN_CATALOG[disciplines[0]]?.label || "Training")),
-      notes: rawDay.notes || rawDay.description || ""
+      notes: rawDay.notes || rawDay.description || "",
+      locked: isLocked
     };
   }
 
@@ -1316,7 +1350,10 @@ function renderTrainingPlan(plan) {
       <div class="day-card ${isRest ? 'day-rest' : ''}">
         <div class="day-card-header">
           <span class="day-name">${dayLabel}</span>
-          <span class="day-icon">${icon}</span>
+          <div class="day-card-header-icons">
+            ${day.locked ? '<span class="day-locked-pill" title="Aktivität ist für die KI-Generierung fixiert">🔒</span>' : ''}
+            <span class="day-icon">${icon}</span>
+          </div>
         </div>
         <div class="day-body">
           <div class="day-type-badge badge-${badgeClass}">

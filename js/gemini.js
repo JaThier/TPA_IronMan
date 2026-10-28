@@ -99,6 +99,14 @@ export async function initTrainingPlan(user) {
   setupTimeframeListeners();
   document.getElementById("ai-adjust-btn")?.addEventListener("click", adjustPlanWithAI);
 
+  // Synchronisation bei externen Updates (z. B. durch manuelles Bearbeiten im Konto-Tab)
+  window.addEventListener("planUpdated", (e) => {
+    if (e.detail) {
+      currentPlan = e.detail;
+      renderTrainingPlan(currentPlan);
+    }
+  });
+
   // Vorschau-Zähler für Aktivitäten aktualisieren
   await updateActivityCountPreview();
 }
@@ -476,7 +484,9 @@ async function savePlan(planData) {
     aiGenerated: true,
   });
 
-  return { id: docRef.id, ...planData };
+  const savedPlan = { id: docRef.id, ...planData, ownerId: user.uid, createdAt: new Date().toISOString(), aiGenerated: true };
+  window.dispatchEvent(new CustomEvent("planUpdated", { detail: savedPlan }));
+  return savedPlan;
 }
 
 // ── Rendering des Wochenplans ──────────────────────────────
@@ -493,8 +503,9 @@ function renderTrainingPlan(plan) {
       ? new Date(plan.createdAt).toLocaleDateString("de-DE", {
           day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"
         })
-      : "Starter";
-    planMeta.textContent = `${plan.aiGenerated ? '🤖 KI-optimiert' : '📋 Starter-Plan'} • ${dateStr}`;
+      : "Aktuell";
+    const originLabel = plan.aiGenerated ? '🤖 KI-optimiert' : '✏️ Manuell angepasst';
+    planMeta.textContent = `${originLabel} • ${dateStr}`;
   }
 
   if (plan.coachNote && coachNote && coachNoteBox) {
@@ -511,6 +522,20 @@ function renderTrainingPlan(plan) {
     const dayLabel = WEEKDAY_DE[dayKey] || dayKey;
     const isRest = day.type === "rest";
 
+    // Subtype-Pills falls vorhanden
+    let subtypesHtml = "";
+    if (Array.isArray(day.subtypes) && day.subtypes.length > 0) {
+      subtypesHtml = `<div class="day-subtype-pills">${day.subtypes.map(s => `<span class="subtype-pill">${escapeHtml(s)}</span>`).join("")}</div>`;
+    }
+
+    // Metriken (Dauer, Distanz, Speed/Pace)
+    const metricsParts = [];
+    metricsParts.push(`⏱️ ${day.duration > 0 ? `${day.duration} Min.` : 'Ruhetag'}`);
+    if (day.distance) metricsParts.push(`📍 ${day.distance} km`);
+    if (day.speed) metricsParts.push(`⚡ ${escapeHtml(day.speed)}`);
+
+    const noteOrDesc = day.notes || day.description || "";
+
     return `
       <div class="day-card ${isRest ? 'day-rest' : ''}">
         <div class="day-card-header">
@@ -521,8 +546,9 @@ function renderTrainingPlan(plan) {
           <div class="day-type-badge badge-${(day.type || 'other').toLowerCase()}">
             ${day.type?.toUpperCase()}
           </div>
-          <div class="day-duration">${day.duration > 0 ? `${day.duration} Min.` : 'Ruhetag'}</div>
-          <p class="day-desc">${escapeHtml(day.description || "")}</p>
+          ${subtypesHtml}
+          <div class="day-duration">${metricsParts.join(" &bull; ")}</div>
+          ${noteOrDesc ? `<p class="day-desc">${escapeHtml(noteOrDesc)}</p>` : ''}
         </div>
         <div class="day-intensity-bar intensity-${day.intensity || 'easy'}"></div>
       </div>

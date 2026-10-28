@@ -331,6 +331,94 @@
             </form>
 
           </div>
+
+          <!-- ── Trainingsplan-Bereich auf der Konto-Seite ── -->
+          <div class="card account-plan-card" id="account-plan-card" style="margin-top: 1.5rem;">
+
+            <div class="card-header account-plan-header">
+              <div class="card-title">
+                <span class="icon" aria-hidden="true">📋</span>
+                <h3 id="account-plan-title">Mein aktueller Trainingsplan</h3>
+              </div>
+              <div class="account-plan-header-actions">
+                <span id="account-plan-status-badge" class="plan-meta text-muted" aria-live="polite">
+                  Lade Trainingsplan…
+                </span>
+                <button type="button" id="account-plan-toggle-mode-btn" class="btn btn-secondary btn-sm" style="width: auto;">
+                  <span class="btn-icon">✏️</span> <span id="account-plan-toggle-text">Plan bearbeiten</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Modus 1: Anzeige-Ansicht (Standard) -->
+            <div id="account-plan-view-container">
+              <!-- Coach-Notiz / Wochenfokus -->
+              <div id="account-plan-coach-note-box" class="coach-note-banner hidden" style="margin-bottom: 1.25rem;">
+                <strong class="coach-title">💬 Notiz &amp; Wochenfokus:</strong>
+                <span id="account-plan-coach-note-text"></span>
+              </div>
+
+              <!-- 7-Tage-Übersicht -->
+              <div id="account-plan-days-grid" class="account-plan-grid" role="list" aria-label="Wochentrainingsplan Übersicht">
+                <div class="empty-plan-placeholder">
+                  <div class="spinner"></div>
+                  <span>Lade aktuellen Trainingsplan…</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modus 2: Manueller Editor (Initial ausgeblendet) -->
+            <div id="account-plan-edit-container" class="hidden">
+              <div class="account-plan-editor-toolbar">
+                <div class="editor-template-actions">
+                  <span class="editor-toolbar-label">Schnell-Vorlagen:</span>
+                  <button type="button" id="btn-template-ironman" class="btn btn-secondary btn-sm" title="Ausgewogene Ironman-Trainingswoche laden">
+                    ⚡ Ironman-Vorlage
+                  </button>
+                  <button type="button" id="btn-template-reset" class="btn btn-secondary btn-sm" title="Alle Tage auf Ruhetag setzen">
+                    🧹 Alle Ruhetag
+                  </button>
+                </div>
+                <div class="editor-actions-top">
+                  <button type="button" id="account-plan-cancel-btn-top" class="btn btn-secondary btn-sm">
+                    Abbrechen
+                  </button>
+                  <button type="button" id="account-plan-save-btn-top" class="btn btn-primary btn-sm">
+                    💾 Speichern
+                  </button>
+                </div>
+              </div>
+
+              <p class="editor-helper-text">
+                Definiere für jeden Tag die Hauptdisziplin (Rad, Schwimmen, Laufen oder Restday). Du kannst mehrere Trainingsarten frei kombinieren (z. B. <em>Intervalle + Endurance</em>). Trage optional Dauer, Distanz, Geschwindigkeit/Pace und Details ein.
+              </p>
+
+              <!-- 7 Tage Eingabemasken (Montag - Sonntag) -->
+              <div id="account-plan-editor-days" class="account-plan-editor-list">
+                <!-- Dynamisch via account.js befüllt -->
+              </div>
+
+              <!-- Allgemeiner Wochenfokus / Notiz -->
+              <div class="form-group" style="margin-top: 1.5rem;">
+                <label for="account-plan-edit-coachnote">
+                  💬 Wochenfokus / Sonstige Infos für die gesamte Woche (optional)
+                </label>
+                <textarea id="account-plan-edit-coachnote" rows="2" class="form-textarea"
+                  placeholder="z. B. Grundlagenwoche mit Fokus auf saubere Trittfrequenz und Erholung."></textarea>
+              </div>
+
+              <!-- Formular-Aktionen unten -->
+              <div class="account-form-actions" style="margin-top: 1.5rem;">
+                <button type="button" id="account-plan-cancel-btn" class="btn btn-secondary" style="width: auto;">
+                  Abbrechen
+                </button>
+                <button type="button" id="account-plan-save-btn" class="btn btn-primary" style="width: auto;">
+                  💾 Trainingsplan speichern &amp; übernehmen
+                </button>
+              </div>
+            </div>
+
+          </div>
         </section>
 
     </main>

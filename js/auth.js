@@ -113,12 +113,14 @@ export function switchTab(tabName) {
     view.classList.toggle("hidden", !isTarget);
   });
 
-  // Falls zum Hub gewechselt wird, Daten aktualisieren
+  // Falls zum Hub, Plan oder Konto gewechselt wird, Daten aktualisieren
   const cb = Date.now();
   if (tabName === "hub") {
     import(`./hub.js?cb=${cb}`).then(m => m.loadAndRenderHub());
   } else if (tabName === "plan") {
     import(`./gemini.js?cb=${cb}`).then(m => m.updateActivityCountPreview?.());
+  } else if (tabName === "account") {
+    import(`./account.js?cb=${cb}`).then(m => m.loadAndRenderAccountPlan?.());
   }
 }
 

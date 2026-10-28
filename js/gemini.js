@@ -377,13 +377,24 @@ function formatPlanForFeedbackPrompt(plan) {
   return WEEKDAYS.map(dayKey => {
     const day = week[dayKey];
     const dayLabel = WEEKDAY_DE[dayKey] || dayKey;
-    if (!day || day.type === "rest") {
+    const isRest = !day || day.type === "rest" || (Array.isArray(day.disciplines) && day.disciplines.length === 1 && day.disciplines[0] === "rest");
+    if (!day || isRest) {
       const note = day?.notes || day?.description;
       return `${dayLabel}: Ruhetag${note ? ` (${note})` : ""}`;
     }
 
-    const typeStr = (day.type || "Aktivität").toUpperCase();
+    let typeStr = (day.type || "Aktivität").toUpperCase();
+    if (Array.isArray(day.disciplines) && day.disciplines.length > 1) {
+      const discNames = day.disciplines.map(d => ({
+        ride: "Rad", run: "Laufen", swim: "Schwimmen"
+      }[d] || d)).join(" + ");
+      typeStr = `KOPPELTRAINING (${discNames})`;
+    }
+
     const metaParts = [];
+    if (Array.isArray(day.disciplines) && day.disciplines.length > 0) {
+      metaParts.push(`Disziplinen: ${day.disciplines.join(", ")}`);
+    }
     if (Array.isArray(day.subtypes) && day.subtypes.length > 0) {
       metaParts.push(`Arten: ${day.subtypes.join(", ")}`);
     }
@@ -396,11 +407,12 @@ function formatPlanForFeedbackPrompt(plan) {
     const note = day.notes || day.description;
     if (note) text += `\n  Notiz/Fokus: ${note}`;
 
-    if (Array.isArray(day.parts) && day.parts.length > 1) {
-      const partsDetail = day.parts.map(p =>
-        `    - Teil "${p.label || p.type}": ${p.duration || 0} Min${p.distance ? `, ${p.distance} km` : ""}${p.speed ? `, Pace ${p.speed}` : ""}${p.intensity ? `, Intensität ${p.intensity}` : ""}`
-      ).join("\n");
-      text += `\n  Aufteilung in Abschnitte:\n${partsDetail}`;
+    if (Array.isArray(day.parts) && day.parts.length > 0) {
+      const partsDetail = day.parts.map(p => {
+        const discPrefix = p.discId ? `[${{ride:"Rad", run:"Laufen", swim:"Schwimmen", rest:"Ruhe"}[p.discId] || p.discId}] ` : "";
+        return `    - ${discPrefix}"${p.label || p.type}": ${p.duration || 0} Min${p.distance ? `, ${p.distance} km` : ""}${p.speed ? `, Pace/Tempo ${p.speed}` : ""}${p.intensity ? `, Intensität ${p.intensity}` : ""}`;
+      }).join("\n");
+      text += `\n  Einheiten / Abschnitte:\n${partsDetail}`;
     }
 
     return text;
@@ -895,20 +907,34 @@ function renderTrainingPlan(plan) {
   const week = plan.weekPlan || {};
   weekContainer.innerHTML = WEEKDAYS.map((dayKey) => {
     const day = week[dayKey] || { type: "rest", duration: 0, description: "Ruhetag", intensity: "easy" };
-    const icon = typeIcon(day.type);
-    const dayLabel = WEEKDAY_DE[dayKey] || dayKey;
-    const isRest = day.type === "rest";
+    const isRest = day.type === "rest" || (Array.isArray(day.disciplines) && day.disciplines.length === 1 && day.disciplines[0] === "rest");
+
+    let icon = typeIcon(day.type);
+    let typeBadgeLabel = (day.type || 'other').toUpperCase();
+    let badgeClass = (day.type || 'other').toLowerCase();
+
+    if (Array.isArray(day.disciplines) && day.disciplines.length > 1) {
+      icon = day.disciplines.map(d => typeIcon(d)).join(" ");
+      const names = day.disciplines.map(d => ({
+        ride: "RAD", run: "LAUF", swim: "SWIM"
+      }[d] || d.toUpperCase())).join(" + ");
+      typeBadgeLabel = `KOPPEL (${names})`;
+      badgeClass = "brick";
+    }
 
     let partsOrMetricsHtml = "";
-    if (Array.isArray(day.parts) && day.parts.length > 1) {
+    if (Array.isArray(day.parts) && (day.parts.length > 1 || (Array.isArray(day.disciplines) && day.disciplines.length > 1))) {
       partsOrMetricsHtml = `
         <div class="day-parts-view-list">
-          ${day.parts.map(p => `
+          ${day.parts.map(p => {
+            const discTag = p.discId ? `<span class="disc-mini-badge badge-${p.discId}">${{ride:"Rad", run:"Lauf", swim:"Swim", rest:"Ruhe"}[p.discId] || p.discId}</span>` : "";
+            return `
             <div class="day-part-item">
               <div class="part-item-header">
                 <span class="subtype-pill">
                   <span class="pill-icon">${p.icon || '•'}</span>
                   <span>${escapeHtml(p.label)}</span>
+                  ${discTag}
                 </span>
                 <span class="part-mini-intensity intensity-${p.intensity || 'easy'}">
                   ${p.intensity === 'hard' ? 'EB' : (p.intensity === 'moderate' ? 'GA2' : 'GA1')}
@@ -916,14 +942,15 @@ function renderTrainingPlan(plan) {
               </div>
               <div class="part-metrics-subline">
                 <span class="metric-mini">⏱️ ${p.duration > 0 ? `${p.duration} Min.` : '–'}</span>
-                ${p.distance != null ? `<span class="metric-mini">📍 ${p.distance} km</span>` : ''}
+                ${p.distance != null && p.distance !== "" ? `<span class="metric-mini">📍 ${p.distance} km</span>` : ''}
                 ${p.speed ? `<span class="metric-mini">⚡ ${escapeHtml(p.speed)}</span>` : ''}
               </div>
             </div>
-          `).join("")}
+            `;
+          }).join("")}
         </div>
         <div class="day-total-badge">
-          Gesamt: ⏱️ ${day.duration} Min.${day.distance != null ? ` • 📍 ${day.distance} km` : ''}
+          Gesamt: ⏱️ ${day.duration} Min.${day.distance != null && day.distance !== "" ? ` • 📍 ${day.distance} km` : ''}
         </div>
       `;
     } else {
@@ -952,8 +979,8 @@ function renderTrainingPlan(plan) {
           <span class="day-icon">${icon}</span>
         </div>
         <div class="day-body">
-          <div class="day-type-badge badge-${(day.type || 'other').toLowerCase()}">
-            ${day.type?.toUpperCase()}
+          <div class="day-type-badge badge-${badgeClass}">
+            ${typeBadgeLabel}
           </div>
           ${partsOrMetricsHtml}
           ${noteOrDesc ? `<p class="day-desc">${escapeHtml(noteOrDesc)}</p>` : ''}

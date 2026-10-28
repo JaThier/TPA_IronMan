@@ -2589,6 +2589,26 @@ body {
   line-height: 1;
 }
 
+.discipline-select-btn .disc-check {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  width:           18px;
+  height:          18px;
+  font-size:       0.7rem;
+  border-radius:   50%;
+  background:      rgba(255, 255, 255, 0.12);
+  margin-left:     0.25rem;
+  font-weight:     700;
+  line-height:     1;
+  transition:      var(--transition);
+}
+
+.discipline-select-btn.active .disc-check {
+  background: rgba(255, 255, 255, 0.35);
+  color:      #fff;
+}
+
 .discipline-select-btn.active {
   color:        #fff;
   font-weight:  700;
@@ -2623,6 +2643,53 @@ body {
   background:   linear-gradient(135deg, #a855f7, #9333ea);
   border-color: #a855f7;
   box-shadow:   0 0 16px rgba(168, 85, 247, 0.45);
+}
+
+/* ── Container für Unterarten je Disziplin ────────────────── */
+.discipline-subtypes-container {
+  display:        flex;
+  flex-direction: column;
+  gap:            0.75rem;
+}
+
+.discipline-subtypes-section {
+  background:    rgba(10, 12, 18, 0.35);
+  border:        1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  padding:       0.75rem 0.85rem;
+  display:       flex;
+  flex-direction: column;
+  gap:           0.5rem;
+}
+
+.disc-section-title {
+  display:     flex;
+  align-items: center;
+  gap:         0.5rem;
+  flex-wrap:   wrap;
+}
+
+.disc-mini-badge {
+  font-size:      0.6875rem;
+  font-weight:    700;
+  padding:        0.15rem 0.5rem;
+  border-radius:  99px;
+  display:        inline-flex;
+  align-items:    center;
+  gap:            0.25rem;
+  letter-spacing: 0.02em;
+}
+
+.disc-mini-badge.badge-ride  { background: rgba(249, 115, 22, 0.2); border: 1px solid #f97316; color: #fb923c; }
+.disc-mini-badge.badge-run   { background: rgba(34, 197, 94, 0.2);  border: 1px solid #22c55e; color: #4ade80; }
+.disc-mini-badge.badge-swim  { background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; color: #60a5fa; }
+.disc-mini-badge.badge-rest  { background: rgba(100, 116, 139, 0.2); border: 1px solid #64748b; color: #94a3b8; }
+.disc-mini-badge.badge-brick { background: rgba(168, 85, 247, 0.2); border: 1px solid #a855f7; color: #c084fc; }
+
+.disc-section-subtitle {
+  font-size:  0.75rem;
+  color:      var(--clr-text-muted);
+  font-style: italic;
 }
 
 /* ── Subtype-Toggle-Buttons (Kombinierbare Arten) ──────────── */
@@ -2776,9 +2843,13 @@ body {
   transition:       var(--transition);
 }
 
+.subtype-part-editor-card.disc-border-ride { border-left-color: #f97316; }
+.subtype-part-editor-card.disc-border-run  { border-left-color: #22c55e; }
+.subtype-part-editor-card.disc-border-swim { border-left-color: #3b82f6; }
+.subtype-part-editor-card.disc-border-rest { border-left-color: #64748b; }
+
 .subtype-part-editor-card:hover {
   border-color: rgba(255, 255, 255, 0.16);
-  border-left-color: var(--clr-accent);
 }
 
 .subtype-part-card-header {
@@ -2800,6 +2871,30 @@ body {
   border:        1px solid var(--clr-accent-glow);
   padding:       0.2rem 0.65rem;
   border-radius: 99px;
+}
+
+.part-card-badge.badge-ride {
+  background:   rgba(249, 115, 22, 0.15);
+  border-color: rgba(249, 115, 22, 0.4);
+  color:        #fb923c;
+}
+
+.part-card-badge.badge-run {
+  background:   rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.4);
+  color:        #4ade80;
+}
+
+.part-card-badge.badge-swim {
+  background:   rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+  color:        #60a5fa;
+}
+
+.part-card-badge.badge-rest {
+  background:   rgba(100, 116, 139, 0.15);
+  border-color: rgba(100, 116, 139, 0.4);
+  color:        #cbd5e1;
 }
 
 .part-card-icon {

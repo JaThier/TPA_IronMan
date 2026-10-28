@@ -695,50 +695,169 @@ function buildPrompt(currentPlan, activities, timeframeDays) {
   const cutoffDate = new Date(Date.now() - (timeframeDays * 24 * 3600 * 1000));
   const dateStr = cutoffDate.toLocaleDateString("de-DE");
 
-  const actsSummary = activities.map((a) => {
-    const km = ((parseFloat(a.distance) || 0) / 1000).toFixed(1);
-    const mins = Math.round((parseFloat(a.moving_time) || 0) / 60);
-    const hr = a.average_heartrate ? `, Ø Puls: ${Math.round(a.average_heartrate)}` : "";
-    const hm = a.total_elevation_gain ? `, Höhenmeter: ↑${Math.round(a.total_elevation_gain)}m` : "";
-    const dateStr = new Date(a.start_date_local || a.start_date || Date.now()).toLocaleDateString("de-DE");
-    return `- ${a.type || 'Aktivität'} (${dateStr}): ${km} km, ${mins} Min${hr}${hm}`;
-  }).join("\n");
+  const actsSummary = formatActivitiesForFeedbackPrompt(activities, timeframeDays);
+  const currentPlanStr = formatPlanForFeedbackPrompt(currentPlan);
 
-  const currentPlanStr = currentPlan?.weekPlan
-    ? JSON.stringify(currentPlan.weekPlan, null, 2)
-    : "Kein bestehender Plan vorhanden.";
-
-  return `Du bist ein erfahrener Triathlon-Coach (Ironman-Spezialist). Analysiere die Trainingshistorie des Athleten und erstelle einen optimierten Wochenplan für die kommende Woche.
-
-## Ziel
-Ironman-Vorbereitung. Disziplinen: Schwimmen (3,8 km), Radfahren (180 km), Laufen (42,2 km).
+  return `Du bist ein hochqualifizierter Triathlon-Headcoach (Ironman-Spezialist für Langdistanz: 3,8 km Schwimmen, 180 km Radfahren, 42,2 km Laufen).
+Analysiere die Trainingshistorie des Athleten aus den letzten ${timeframeDays} Tagen und erstelle einen neuen, detailgenauen und perfekt abgestimmten Wochenplan für die kommende Woche.
 
 ## Trainings-Historie (letzte ${timeframeDays} Tage, seit ${dateStr})
 Anzahl analysierter Einheiten: ${activities.length}
-${actsSummary || "Keine Strava-Aktivitäten in diesem Zeitraum gefunden. Erstelle einen soliden Einstiegsplan."}
+${actsSummary}
 
-## Aktueller Wochenplan
+## Bisheriger Trainingsplan
 ${currentPlanStr}
 
-## Trainingsprinzipien
-1. Belastungssteuerung: Achte auf Ruhetage und Erholung zwischen intensiven Einheiten.
-2. Progressive Überlastung: Steigere das Volumen moderat (+5% bis +10%) gegenüber der letzten Woche, wenn der Athlet gut trainiert hat.
-3. Triathlon-Spezifisch: Mindestens 1 Koppeleinheit (Brick: Rad + kurzer Lauf) am Wochenende einplanen.
-4. Halte die Beschreibungen fokussiert und präzise (1-2 Sätze je Einheit).
+## Trainingsphilosophie für den Ironman
+1. **Belastungssteuerung & Erholung**: Mindestens 1 echter Ruhetag pro Woche (z. B. Montag). Ruhetage dienen der Superkompensation.
+2. **Triathlon-Spezifik**: Am Wochenende ist mindestens 1 Koppeleinheit (Brick: Radfahren gefolgt von einem Koppellauf) oder ein langer Lauf (Longrun) einzuplanen.
+3. **Progressive Anpassung**: Die Gesamtbelastung sollte maßvoll an die bisherige Historie anknüpfen (+5% bis +10% Steigerung, keine abrupten Überlastungen).
+
+## WICHTIG: Architektur des neuen, ausführlichen Trainingsplan-Formats
+Das Dashboard nutzt ein neues, detailliertes Mehr-Disziplinen- und Abschnittsmodell. Jeder Wochentag (monday bis sunday) MUSS exakt nach diesen Regeln strukturiert sein:
+
+1. **Disziplinen (\`disciplines\`)**:
+   - Array der gewählten Disziplinen. Erlaubte IDs: \`"swim"\`, \`"ride"\`, \`"run"\`, \`"rest"\`.
+   - **KOPPELTRAINING (Brick)**: "Koppel" ist KEINE eigene Disziplin! Eine Koppeleinheit wird erzeugt, indem MEHRERE Disziplinen gewählt werden (z. B. \`["ride", "run"]\` oder \`["swim", "ride"]\`).
+   - **RUHETAG**: Hat AUSSCHLIESSLICH \`["rest"]\` als Disziplin. Ruhetag darf NIEMALS mit einer Sport-Disziplin kombiniert werden!
+
+2. **Trainingsarten je Disziplin (\`subtypesByDisc\` & \`subtypes\`)**:
+   - Für jede gewählte Disziplin in \`disciplines\` werden eine oder mehrere spezifische Arten gewählt:
+     - \`swim\`: \`"technik"\` (Technik), \`"distance"\` (Distance), \`"intervalle"\` (Intervalle)
+     - \`ride\`: \`"intervalle"\` (Intervalle), \`"endurance"\` (Endurance), \`"schwelle"\` (Schwelle)
+     - \`run\`: \`"longrun"\` (Longrun), \`"intervalle"\` (Intervalle), \`"zone2"\` (Zone 2)
+     - \`rest\`: \`"ruhe"\` (Komplette Erholung), \`"mobility"\` (Stretching & Mobilität), \`"walk"\` (Spaziergang / Regenerativ)
+   - \`subtypesByDisc\`: Ein Objekt mit Subtype-Arrays je Disziplin, z. B. \`{ "ride": ["endurance"], "run": ["zone2"] }\`.
+   - \`subtypes\`: Flat-Array aller gewählten Subtypes, z. B. \`["endurance", "zone2"]\`.
+
+3. **Abschnitte & Parameter (\`parts\`)**:
+   - Das Array \`parts\` enthält genau ein Objekt für JEDE gewählte Art JEDER Disziplin.
+   - Jedes Teil-Objekt besitzt:
+     - \`discId\`: Disziplin-ID (\`"swim"\`, \`"ride"\`, \`"run"\`, \`"rest"\`)
+     - \`id\`: Art-ID (z. B. \`"endurance"\`, \`"zone2"\`, \`"ruhe"\`)
+     - \`label\`: Bezeichnung mit Disziplin-Präfix (z. B. \`"Rad: Endurance"\`, \`"Laufen: Zone 2"\`)
+     - \`icon\`: Passendes Emoji (z. B. 🔋, 💚, ⚡, 🔥, 🎯, 🌊, 🏃‍♂️, 🛏️, 🧘)
+     - \`duration\`: Dauer in Minuten (ganze Zahl, 0 bei Ruhetag)
+     - \`distance\`: Distanz in Kilometern als Zahl (z. B. 60 oder 1.8; bei reinem Ruhetag null)
+     - \`speed\`: Tempo-/Pace-/Leistungsangabe (z. B. \`"32 km/h / 230 W"\`, \`"5:15 min/km"\`, \`"1:45 min/100m"\` oder \`""\` bei Ruhetag)
+     - \`intensity\`: Intensität (\`"easy"\`, \`"moderate"\` oder \`"hard"\`)
+
+4. **Tages-Gesamtwerte**:
+   - \`duration\`: Summe aller part.duration in Minuten (ganze Zahl)
+   - \`distance\`: Summe aller part.distance in km (Zahl oder null)
+   - \`speed\`: Zusammenfassung der Tempi (z. B. \`"Rad: 30 km/h • Laufen: 5:25 min/km"\`)
+   - \`intensity\`: Höchste Intensität des Tages (\`"easy"\`, \`"moderate"\` oder \`"hard"\`)
+   - \`description\`: Kurztitel der Einheit (z. B. \`"Koppeltraining: Rad (Endurance) + Laufen (Zone 2)"\`)
+   - \`notes\`: Präzise Coaching-Anweisung & Durchführungshinweise (Warmup, Intervalle, Trittfrequenz, Pacing, Verpflegung).
 
 ## WICHTIG: Antwortformat
 Antworte AUSSCHLIESSLICH mit einem validen JSON-Objekt ohne Markdown-Codeblöcke (\`\`\`json) und ohne zusätzlichen Text davor oder danach:
 {
+  "coachNote": "Persönliche Analyse und Begründung des Headcoaches für die Schwerpunktsetzung dieser Woche (2-3 Sätze).",
   "weekPlan": {
-    "monday":    { "type": "swim|ride|run|rest|brick", "duration": 60, "intensity": "easy|moderate|hard", "description": "Präzise Beschreibung der Einheit (1-2 Sätze)" },
-    "tuesday":   { "type": "run", "duration": 75, "intensity": "easy", "description": "..." },
-    "wednesday": { "type": "ride", "duration": 90, "intensity": "moderate", "description": "..." },
-    "thursday":  { "type": "rest", "duration": 0, "intensity": "easy", "description": "Aktive Erholung" },
-    "friday":    { "type": "swim", "duration": 45, "intensity": "hard", "description": "..." },
-    "saturday":  { "type": "brick", "duration": 180, "intensity": "moderate", "description": "..." },
-    "sunday":    { "type": "run", "duration": 120, "intensity": "easy", "description": "Langer Lauf" }
-  },
-  "coachNote": "Persönliche Analyse und Begründung des Coaches für diese Woche (2-3 Sätze)."
+    "monday": {
+      "disciplines": ["rest"],
+      "subtypes": ["ruhe", "mobility"],
+      "subtypesByDisc": { "rest": ["ruhe", "mobility"] },
+      "parts": [
+        { "discId": "rest", "id": "ruhe", "label": "Ruhetag: Komplette Erholung", "icon": "🛏️", "duration": 0, "distance": null, "speed": "", "intensity": "easy" },
+        { "discId": "rest", "id": "mobility", "label": "Ruhetag: Stretching & Mobilität", "icon": "🧘", "duration": 20, "distance": null, "speed": "", "intensity": "easy" }
+      ],
+      "duration": 20,
+      "distance": null,
+      "speed": "",
+      "intensity": "easy",
+      "description": "Ruhetag & Mobilität",
+      "notes": "Aktive Erholung, Faszienrolle und Dehnen für Beine und Hüfte."
+    },
+    "tuesday": {
+      "disciplines": ["ride"],
+      "subtypes": ["intervalle", "schwelle"],
+      "subtypesByDisc": { "ride": ["intervalle", "schwelle"] },
+      "parts": [
+        { "discId": "ride", "id": "intervalle", "label": "Rad: Intervalle", "icon": "⚡", "duration": 45, "distance": 22, "speed": "34 km/h", "intensity": "hard" },
+        { "discId": "ride", "id": "schwelle", "label": "Rad: Schwelle", "icon": "🔥", "duration": 30, "distance": 15, "speed": "32 km/h", "intensity": "hard" }
+      ],
+      "duration": 75,
+      "distance": 37,
+      "speed": "Rad: 34 km/h • Rad: 32 km/h",
+      "intensity": "hard",
+      "description": "Rad (Intervalle & Schwelle)",
+      "notes": "15 Min. Warmup, 3x 8 Min. an der anaeroben Schwelle (TF 90 rpm, 4 Min Pause), 15 Min. Ausfahren."
+    },
+    "wednesday": {
+      "disciplines": ["swim"],
+      "subtypes": ["technik", "intervalle"],
+      "subtypesByDisc": { "swim": ["technik", "intervalle"] },
+      "parts": [
+        { "discId": "swim", "id": "technik", "label": "Schwimmen: Technik", "icon": "🎯", "duration": 25, "distance": 1.0, "speed": "1:55 min/100m", "intensity": "easy" },
+        { "discId": "swim", "id": "intervalle", "label": "Schwimmen: Intervalle", "icon": "⚡", "duration": 35, "distance": 1.5, "speed": "1:40 min/100m", "intensity": "moderate" }
+      ],
+      "duration": 60,
+      "distance": 2.5,
+      "speed": "Schwimmen: 1:55 min/100m • Schwimmen: 1:40 min/100m",
+      "intensity": "moderate",
+      "description": "Schwimmen (Technik & Intervalle)",
+      "notes": "Einschwimmen, Faustschwimmen & Kraulbeine, gefolgt von 10x 100m zügig mit 20s Pause."
+    },
+    "thursday": {
+      "disciplines": ["run"],
+      "subtypes": ["zone2"],
+      "subtypesByDisc": { "run": ["zone2"] },
+      "parts": [
+        { "discId": "run", "id": "zone2", "label": "Laufen: Zone 2", "icon": "💚", "duration": 60, "distance": 11, "speed": "5:25 min/km", "intensity": "easy" }
+      ],
+      "duration": 60,
+      "distance": 11,
+      "speed": "Laufen: 5:25 min/km",
+      "intensity": "easy",
+      "description": "Laufen (Zone 2)",
+      "notes": "Lockerer Grundlagenausdauerlauf, Puls strikt im aeroben Bereich halten."
+    },
+    "friday": {
+      "disciplines": ["swim"],
+      "subtypes": ["distance"],
+      "subtypesByDisc": { "swim": ["distance"] },
+      "parts": [
+        { "discId": "swim", "id": "distance", "label": "Schwimmen: Distance", "icon": "🌊", "duration": 45, "distance": 2.2, "speed": "1:48 min/100m", "intensity": "moderate" }
+      ],
+      "duration": 45,
+      "distance": 2.2,
+      "speed": "Schwimmen: 1:48 min/100m",
+      "intensity": "moderate",
+      "description": "Schwimmen (Distance)",
+      "notes": "Gleichmäßige Ausdauerserie im Neopren- oder Wettkampftempo, Fokus auf Wasserlage."
+    },
+    "saturday": {
+      "disciplines": ["ride", "run"],
+      "subtypes": ["endurance", "zone2"],
+      "subtypesByDisc": { "ride": ["endurance"], "run": ["zone2"] },
+      "parts": [
+        { "discId": "ride", "id": "endurance", "label": "Rad: Endurance", "icon": "🔋", "duration": 120, "distance": 60, "speed": "30 km/h", "intensity": "moderate" },
+        { "discId": "run", "id": "zone2", "label": "Laufen: Koppellauf Zone 2", "icon": "💚", "duration": 30, "distance": 5.5, "speed": "5:25 min/km", "intensity": "easy" }
+      ],
+      "duration": 150,
+      "distance": 65.5,
+      "speed": "Rad: 30 km/h • Laufen: 5:25 min/km",
+      "intensity": "moderate",
+      "description": "Koppeltraining: Rad (Endurance) + Laufen (Zone 2)",
+      "notes": "Wettkampfspezifisches Koppeltraining: 2 Std. Radfahren in Aero-Position, direkter schneller Wechsel und 30 Min. Koppellauf."
+    },
+    "sunday": {
+      "disciplines": ["run"],
+      "subtypes": ["longrun"],
+      "subtypesByDisc": { "run": ["longrun"] },
+      "parts": [
+        { "discId": "run", "id": "longrun", "label": "Laufen: Longrun", "icon": "🏃‍♂️", "duration": 90, "distance": 16, "speed": "5:35 min/km", "intensity": "moderate" }
+      ],
+      "duration": 90,
+      "distance": 16,
+      "speed": "Laufen: 5:35 min/km",
+      "intensity": "moderate",
+      "description": "Laufen (Longrun)",
+      "notes": "Langer Vorbereitungslauf. Alle 25 Minuten Kohlenhydrat-Zufuhr testen."
+    }
+  }
 }`;
 }
 
@@ -837,6 +956,227 @@ async function callGeminiAPI(prompt, apiKey) {
   return text;
 }
 
+// ── Katalog & Normalisierung für das neue Format ──────────
+const AI_PLAN_CATALOG = {
+  rest: {
+    label: "Ruhetag",
+    icon: "😴",
+    subtypes: {
+      ruhe:     { label: "Ruhetag: Komplette Erholung", icon: "🛏️", defInt: "easy", defSpeed: "" },
+      mobility: { label: "Ruhetag: Stretching & Mobilität", icon: "🧘", defInt: "easy", defSpeed: "" },
+      walk:     { label: "Ruhetag: Spaziergang / Regenerativ", icon: "🚶", defInt: "easy", defSpeed: "" }
+    }
+  },
+  swim: {
+    label: "Schwimmen",
+    icon: "🏊",
+    subtypes: {
+      technik:   { label: "Schwimmen: Technik", icon: "🎯", defInt: "easy", defSpeed: "1:55 min/100m" },
+      distance:  { label: "Schwimmen: Distance", icon: "🌊", defInt: "moderate", defSpeed: "1:48 min/100m" },
+      intervalle:{ label: "Schwimmen: Intervalle", icon: "⚡", defInt: "hard", defSpeed: "1:40 min/100m" }
+    }
+  },
+  ride: {
+    label: "Rad",
+    icon: "🚴",
+    subtypes: {
+      intervalle:{ label: "Rad: Intervalle", icon: "⚡", defInt: "hard", defSpeed: "34 km/h" },
+      endurance: { label: "Rad: Endurance", icon: "🔋", defInt: "moderate", defSpeed: "30 km/h" },
+      schwelle:  { label: "Rad: Schwelle", icon: "🔥", defInt: "hard", defSpeed: "32 km/h" }
+    }
+  },
+  run: {
+    label: "Laufen",
+    icon: "🏃",
+    subtypes: {
+      longrun:   { label: "Laufen: Longrun", icon: "🏃‍♂️", defInt: "moderate", defSpeed: "5:30 min/km" },
+      intervalle:{ label: "Laufen: Intervalle", icon: "⚡", defInt: "hard", defSpeed: "4:30 min/km" },
+      zone2:     { label: "Laufen: Zone 2", icon: "💚", defInt: "easy", defSpeed: "5:45 min/km" }
+    }
+  }
+};
+
+/**
+ * Normalisiert und validiert einen von Gemini generierten Trainingsplan,
+ * sodass er ausnahmslos dem neuen Mehr-Disziplinen- und Abschnittsformat entspricht.
+ */
+function normalizePlanFromAI(rawPlan) {
+  if (!rawPlan || typeof rawPlan !== "object") return null;
+  const rawWeek = rawPlan.weekPlan || {};
+  const normalizedWeek = {};
+
+  for (const dayKey of WEEKDAYS) {
+    const rawDay = rawWeek[dayKey] || { type: "rest" };
+
+    // 1. Disziplinen validieren & bereinigen
+    let disciplines = [];
+    if (Array.isArray(rawDay.disciplines) && rawDay.disciplines.length > 0) {
+      for (const d of rawDay.disciplines) {
+        if (d === "brick") {
+          if (!disciplines.includes("ride")) disciplines.push("ride");
+          if (!disciplines.includes("run")) disciplines.push("run");
+        } else if (AI_PLAN_CATALOG[d] && !disciplines.includes(d)) {
+          disciplines.push(d);
+        }
+      }
+    } else if (rawDay.type === "brick") {
+      disciplines = ["ride", "run"];
+    } else if (rawDay.type && AI_PLAN_CATALOG[rawDay.type]) {
+      disciplines = [rawDay.type];
+    } else {
+      disciplines = ["rest"];
+    }
+
+    // Ruhetags-Regel: Ruhetag schließt alle Sportarten aus
+    if (disciplines.includes("rest")) {
+      if (disciplines.length > 1) {
+        disciplines = disciplines.filter(d => d !== "rest");
+      } else {
+        disciplines = ["rest"];
+      }
+    }
+    if (disciplines.length === 0) disciplines = ["rest"];
+
+    const isRest = disciplines.length === 1 && disciplines[0] === "rest";
+
+    // 2. Parts & Subtypes validieren und aufbauen
+    const parts = [];
+    const subtypesByDisc = {};
+    disciplines.forEach(d => { subtypesByDisc[d] = []; });
+
+    if (Array.isArray(rawDay.parts) && rawDay.parts.length > 0) {
+      for (const p of rawDay.parts) {
+        if (!p) continue;
+        let discId = p.discId;
+        if (!discId || !AI_PLAN_CATALOG[discId]) {
+          for (const d of disciplines) {
+            if (AI_PLAN_CATALOG[d]?.subtypes[p.id]) { discId = d; break; }
+          }
+        }
+        if (!discId || !disciplines.includes(discId)) {
+          discId = disciplines[0];
+        }
+
+        const discConf = AI_PLAN_CATALOG[discId] || AI_PLAN_CATALOG.rest;
+        let subId = (p.id || "").toLowerCase();
+        if (!discConf.subtypes[subId]) {
+          const labelLower = (p.label || "").toLowerCase();
+          for (const sKey of Object.keys(discConf.subtypes)) {
+            if (labelLower.includes(sKey)) { subId = sKey; break; }
+          }
+          if (!discConf.subtypes[subId]) {
+            subId = Object.keys(discConf.subtypes)[0];
+          }
+        }
+
+        const subConf = discConf.subtypes[subId] || { label: p.label || subId, icon: "•", defInt: "moderate" };
+        const duration = typeof p.duration === "number" ? Math.max(0, Math.round(p.duration)) : (isRest ? 0 : 30);
+        const distance = p.distance != null && !isNaN(parseFloat(p.distance)) ? parseFloat(parseFloat(p.distance).toFixed(1)) : null;
+        const speed = p.speed ? p.speed.toString().trim() : (subConf.defSpeed || "");
+        const intensity = ["easy", "moderate", "hard"].includes(p.intensity) ? p.intensity : (subConf.defInt || "moderate");
+
+        parts.push({
+          discId,
+          id: subId,
+          label: p.label || subConf.label,
+          icon: p.icon || subConf.icon || "•",
+          duration,
+          distance,
+          speed,
+          intensity
+        });
+
+        if (!subtypesByDisc[discId].includes(subId)) {
+          subtypesByDisc[discId].push(subId);
+        }
+      }
+    }
+
+    // Fallback: Wenn Gemini keine Parts geliefert hat, erstellen wir sie sauber aus den Subtypes
+    if (parts.length === 0) {
+      for (const d of disciplines) {
+        const discConf = AI_PLAN_CATALOG[d] || AI_PLAN_CATALOG.rest;
+        const rawSubs = (rawDay.subtypesByDisc && rawDay.subtypesByDisc[d]) || rawDay.subtypes || [];
+        const chosenSubs = rawSubs.filter(s => discConf.subtypes[s]);
+        const finalSubs = chosenSubs.length > 0 ? chosenSubs : [Object.keys(discConf.subtypes)[0]];
+
+        const count = finalSubs.length;
+        const totalDayDur = typeof rawDay.duration === "number" && rawDay.duration > 0 ? rawDay.duration : (d === "rest" ? 0 : 45);
+        const durPerPart = Math.round(totalDayDur / (disciplines.length * count));
+
+        for (const sId of finalSubs) {
+          const subConf = discConf.subtypes[sId];
+          parts.push({
+            discId: d,
+            id: sId,
+            label: subConf.label,
+            icon: subConf.icon,
+            duration: d === "rest" ? 0 : durPerPart,
+            distance: d === "rest" ? null : (rawDay.distance ? parseFloat((rawDay.distance / (disciplines.length * count)).toFixed(1)) : null),
+            speed: subConf.defSpeed || "",
+            intensity: subConf.defInt || "moderate"
+          });
+          if (!subtypesByDisc[d].includes(sId)) {
+            subtypesByDisc[d].push(sId);
+          }
+        }
+      }
+    }
+
+    // Subtypes als flache Liste
+    const subtypes = [];
+    for (const list of Object.values(subtypesByDisc)) {
+      subtypes.push(...list);
+    }
+
+    // Gesamtwerte aufsummieren
+    const totalDuration = parts.reduce((sum, p) => sum + (p.duration || 0), 0);
+    const hasDistances = parts.some(p => typeof p.distance === "number" && p.distance > 0);
+    const totalDistance = hasDistances
+      ? parseFloat(parts.reduce((sum, p) => sum + (p.distance || 0), 0).toFixed(1))
+      : null;
+
+    // Tempo-String zusammensetzen falls nicht angegeben
+    const speedParts = [];
+    parts.forEach(p => {
+      if (p.speed && !speedParts.includes(p.speed)) {
+        speedParts.push(`${AI_PLAN_CATALOG[p.discId]?.label || p.discId}: ${p.speed}`);
+      }
+    });
+    const totalSpeed = rawDay.speed || (speedParts.length > 0 ? speedParts.join(" • ") : "");
+
+    // Gesamt-Intensität ermitteln
+    let totalIntensity = "easy";
+    if (parts.some(p => p.intensity === "hard")) {
+      totalIntensity = "hard";
+    } else if (parts.some(p => p.intensity === "moderate")) {
+      totalIntensity = "moderate";
+    }
+
+    const finalType = isRest ? "rest" : (disciplines.length > 1 ? "brick" : disciplines[0]);
+
+    normalizedWeek[dayKey] = {
+      type: finalType,
+      disciplines,
+      subtypes,
+      subtypesByDisc,
+      parts,
+      duration: totalDuration,
+      distance: totalDistance,
+      speed: totalSpeed,
+      intensity: totalIntensity,
+      description: rawDay.description || (disciplines.length > 1 ? "Koppeltraining" : (AI_PLAN_CATALOG[disciplines[0]]?.label || "Training")),
+      notes: rawDay.notes || rawDay.description || ""
+    };
+  }
+
+  return {
+    ...rawPlan,
+    weekPlan: normalizedWeek,
+    coachNote: rawPlan.coachNote || "Dein Ironman-Wochenplan wurde von der KI optimiert."
+  };
+}
+
 function parsePlanResponse(rawText) {
   try {
     // Eventuelle Markdown-Codeblocks entfernen
@@ -854,7 +1194,7 @@ function parsePlanResponse(rawText) {
 
     const parsed = JSON.parse(cleaned);
     if (!parsed.weekPlan) return null;
-    return parsed;
+    return normalizePlanFromAI(parsed);
   } catch (err) {
     console.error("JSON Parse-Fehler von Gemini:", err, rawText);
     return null;

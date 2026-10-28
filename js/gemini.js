@@ -98,6 +98,10 @@ export async function initTrainingPlan(user) {
   // Setup Event-Listener
   setupTimeframeListeners();
   document.getElementById("ai-adjust-btn")?.addEventListener("click", adjustPlanWithAI);
+  document.getElementById("ai-feedback-btn")?.addEventListener("click", analyzePlanWithAI);
+  document.getElementById("ai-feedback-close-btn")?.addEventListener("click", () => {
+    document.getElementById("ai-feedback-card")?.classList.add("hidden");
+  });
 
   // Synchronisation bei externen Updates (z. B. durch manuelles Bearbeiten im Konto-Tab)
   window.addEventListener("planUpdated", (e) => {
@@ -299,6 +303,379 @@ async function adjustPlanWithAI() {
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+// ── KI-Plan Feedback & Analyse ────────────────────────────
+async function analyzePlanWithAI() {
+  let geminiApiKey;
+  try {
+    const secrets = getSecrets();
+    geminiApiKey = secrets?.geminiApiKey;
+    if (!geminiApiKey) throw new Error("Kein Gemini API-Key vorhanden.");
+  } catch (err) {
+    showToast("Secrets nicht geladen – bitte erst einloggen.", "error");
+    return;
+  }
+
+  if (!currentPlan?.weekPlan || Object.keys(currentPlan.weekPlan).length === 0) {
+    showToast("Bitte erstelle oder lade zuerst einen Trainingsplan (oder lasse einen von der KI anpassen), bevor du eine Analyse anforderst.", "warning");
+    return;
+  }
+
+  const btn = document.getElementById("ai-feedback-btn");
+  if (btn) btn.disabled = true;
+
+  showAiStatus(`🔍 Analysiere deinen aktuellen Trainingsplan gegen Aktivitäten der letzten ${aiTimeframeDays} Tage…`);
+
+  try {
+    // 1. Aktivitäten laden und nach gewähltem Zeitraum filtern
+    const allActs = await loadCachedActivities();
+    const cutoff = Date.now() - (aiTimeframeDays * 24 * 3600 * 1000);
+    const filteredActs = allActs.filter(a => {
+      if (!a) return false;
+      const d = new Date(a.start_date || a.start_date_local || 0).getTime();
+      return !isNaN(d) && d >= cutoff;
+    });
+
+    // 2. Prompt für Feedback bauen
+    const prompt = buildFeedbackPrompt(currentPlan, filteredActs, aiTimeframeDays);
+
+    // 3. Gemini API aufrufen
+    showAiStatus("🧠 Gemini Headcoach wertet deinen Plan aus und formuliert Feedback…");
+    const feedbackJSON = await callGeminiAPI(prompt, geminiApiKey);
+
+    // 4. Feedback parsen
+    const feedbackData = parseFeedbackResponse(feedbackJSON);
+    if (!feedbackData) throw new Error("Ungültiges Feedback-Format von Gemini erhalten");
+
+    // 5. Feedback in der UI rendern
+    renderPlanFeedback(feedbackData, aiTimeframeDays, filteredActs.length);
+
+    // 6. Feedback-Card einblenden und sanft dorthin scrollen
+    const card = document.getElementById("ai-feedback-card");
+    if (card) {
+      card.classList.remove("hidden");
+      card.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    hideAiStatus();
+    showToast(`✅ Feedback zum Trainingsplan erfolgreich erstellt (${filteredActs.length} Einheiten analysiert)!`, "success");
+
+  } catch (err) {
+    console.error("Gemini Feedback Fehler:", err);
+    hideAiStatus();
+    showToast(`KI-Feedback fehlgeschlagen: ${err.message}`, "error");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ── Formatierung für Feedback-Prompt ───────────────────────
+function formatPlanForFeedbackPrompt(plan) {
+  if (!plan?.weekPlan) return "Kein bestehender Plan vorhanden.";
+  const week = plan.weekPlan;
+  return WEEKDAYS.map(dayKey => {
+    const day = week[dayKey];
+    const dayLabel = WEEKDAY_DE[dayKey] || dayKey;
+    if (!day || day.type === "rest") {
+      const note = day?.notes || day?.description;
+      return `${dayLabel}: Ruhetag${note ? ` (${note})` : ""}`;
+    }
+
+    const typeStr = (day.type || "Aktivität").toUpperCase();
+    const metaParts = [];
+    if (Array.isArray(day.subtypes) && day.subtypes.length > 0) {
+      metaParts.push(`Arten: ${day.subtypes.join(", ")}`);
+    }
+    if (day.duration) metaParts.push(`Dauer: ${day.duration} Min`);
+    if (day.distance) metaParts.push(`Distanz: ${day.distance} km`);
+    if (day.speed) metaParts.push(`Tempo: ${day.speed}`);
+    if (day.intensity) metaParts.push(`Intensität: ${day.intensity}`);
+
+    let text = `${dayLabel}: ${typeStr} (${metaParts.join(" • ")})`;
+    const note = day.notes || day.description;
+    if (note) text += `\n  Notiz/Fokus: ${note}`;
+
+    if (Array.isArray(day.parts) && day.parts.length > 1) {
+      const partsDetail = day.parts.map(p =>
+        `    - Teil "${p.label || p.type}": ${p.duration || 0} Min${p.distance ? `, ${p.distance} km` : ""}${p.speed ? `, Pace ${p.speed}` : ""}${p.intensity ? `, Intensität ${p.intensity}` : ""}`
+      ).join("\n");
+      text += `\n  Aufteilung in Abschnitte:\n${partsDetail}`;
+    }
+
+    return text;
+  }).join("\n");
+}
+
+function formatActivitiesForFeedbackPrompt(activities, timeframeDays) {
+  if (!activities || activities.length === 0) {
+    return `Keine Strava-Aktivitäten in den letzten ${timeframeDays} Tagen gefunden.`;
+  }
+
+  let swimKm = 0, swimMins = 0, swimCount = 0;
+  let bikeKm = 0, bikeMins = 0, bikeCount = 0;
+  let runKm  = 0, runMins  = 0, runCount  = 0;
+  let otherMins = 0, otherCount = 0;
+  let maxBikeKm = 0, maxRunKm = 0;
+
+  activities.forEach(a => {
+    const type = (a.type || "").toLowerCase();
+    const km = (parseFloat(a.distance) || 0) / 1000;
+    const mins = Math.round((parseFloat(a.moving_time) || 0) / 60);
+
+    if (type.includes("swim")) {
+      swimCount++;
+      swimKm += km;
+      swimMins += mins;
+    } else if (type.includes("ride") || type.includes("bike")) {
+      bikeCount++;
+      bikeKm += km;
+      bikeMins += mins;
+      if (km > maxBikeKm) maxBikeKm = km;
+    } else if (type.includes("run")) {
+      runCount++;
+      runKm += km;
+      runMins += mins;
+      if (km > maxRunKm) maxRunKm = km;
+    } else {
+      otherCount++;
+      otherMins += mins;
+    }
+  });
+
+  const totalHours = ((swimMins + bikeMins + runMins + otherMins) / 60).toFixed(1);
+  const totalKm = (swimKm + bikeKm + runKm).toFixed(1);
+
+  const listExcerpt = activities.slice(0, 20).map(a => {
+    const km = ((parseFloat(a.distance) || 0) / 1000).toFixed(1);
+    const mins = Math.round((parseFloat(a.moving_time) || 0) / 60);
+    const hr = a.average_heartrate ? `, Ø Puls: ${Math.round(a.average_heartrate)}` : "";
+    const dateStr = new Date(a.start_date_local || a.start_date || Date.now()).toLocaleDateString("de-DE");
+    return `  - ${a.type || 'Aktivität'} (${dateStr}): ${km} km, ${mins} Min${hr}`;
+  }).join("\n");
+
+  return `Volumen & Einheiten der letzten ${timeframeDays} Tage:
+- Gesamt: ${activities.length} Einheiten, ~${totalHours} Stunden, ${totalKm} km
+- 🏊 Schwimmen: ${swimCount} Einheiten, ${(swimKm * 1000).toFixed(0)} m (${(swimMins / 60).toFixed(1)} Std.)
+- 🚴 Radfahren: ${bikeCount} Einheiten, ${bikeKm.toFixed(1)} km (${(bikeMins / 60).toFixed(1)} Std.)${maxBikeKm > 0 ? `, Längste Fahrt: ${maxBikeKm.toFixed(1)} km` : ''}
+- 🏃 Laufen: ${runCount} Einheiten, ${runKm.toFixed(1)} km (${(runMins / 60).toFixed(1)} Std.)${maxRunKm > 0 ? `, Längster Lauf: ${maxRunKm.toFixed(1)} km` : ''}
+${otherCount > 0 ? `- 🏋️ Sonstige Einheiten: ${otherCount} (${(otherMins / 60).toFixed(1)} Std.)\n` : ''}
+Auszug jüngster Einheiten:
+${listExcerpt}`;
+}
+
+function buildFeedbackPrompt(currentPlan, activities, timeframeDays) {
+  const planSummary = formatPlanForFeedbackPrompt(currentPlan);
+  const actsSummary = formatActivitiesForFeedbackPrompt(activities, timeframeDays);
+
+  return `Du bist ein hochqualifizierter Triathlon-Headcoach (Spezialisierung Langdistanz / Ironman).
+Der Athlet möchte eine professionelle Analyse und konstruktives Feedback zu seinem AKTUELLES WOCHENTRAININGPLAN, basierend auf seinen tatsächlich absolvierten Einheiten der vergangenen ${timeframeDays} Tage.
+
+WICHTIGER HINWEIS: Du sollst den Trainingsplan NICHT überschreiben und keinen neuen Plan generieren, sondern den bestehenden Plan fundiert bewerten und Feedback geben!
+
+## Ziel
+Ironman-Vorbereitung (3,8 km Schwimmen, 180 km Radfahren, 42,2 km Laufen).
+
+## Trainingshistorie des Athleten (letzte ${timeframeDays} Tage)
+${actsSummary}
+
+## Zu analysierender aktueller Trainingsplan
+${planSummary}
+
+## Deine Bewertungskriterien als Coach:
+1. Belastungs- & Umfangs-Verhältnis: Passt das geplante Wochenvolumen zu den bisherigen Einheiten der letzten ${timeframeDays} Tage, oder droht Überlastung / ein zu steiler Anstieg (>10-15%)?
+2. Balance der drei Disziplinen: Werden Schwimmen, Radfahren und Laufen zielgerichtet trainiert?
+3. Schlüsseleinheiten & Erholung: Sind Longride, Longrun oder Schwelleneinheiten sinnvoll platziert? Sind Ruhetage zur Superkompensation ausreichend?
+4. Stärken: 2 bis 4 positive Aspekte des aktuellen Plans.
+5. Risiken & Warnungen: 1 bis 3 potenzielle Gefahrenquellen, Überlastungen oder Lücken.
+6. Handlungsempfehlungen: 3 bis 5 konkrete Tipps für die anstehende Trainingswoche.
+7. Gesamt-Score: 0 bis 100 Punkte (wie stimmig und machbar der Plan ist) mit prägnantem Prädikat.
+
+## WICHTIG: Antwortformat
+Antworte AUSSCHLIESSLICH mit einem validen JSON-Objekt ohne Markdown-Codeblöcke (\`\`\`json) und ohne zusätzlichen Text davor oder danach:
+{
+  "score": 85,
+  "rating": "Ausgewogen & Zielgerichtet",
+  "summary": "3-4 Sätze fundiertes Gesamt-Feedback des Coaches.",
+  "disciplineAnalysis": {
+    "swim": {
+      "status": "optimal",
+      "comment": "Feedback zum Schwimmvolumen im Vergleich zur Historie (1-2 Sätze)."
+    },
+    "ride": {
+      "status": "optimal",
+      "comment": "Feedback zum Radfahren / Longride im Vergleich zur Historie (1-2 Sätze)."
+    },
+    "run": {
+      "status": "warning",
+      "comment": "Feedback zum Laufen / Pacing / Gelenkbelastung im Vergleich zur Historie (1-2 Sätze)."
+    }
+  },
+  "strengths": [
+    "Präzise Stärke 1",
+    "Präzise Stärke 2"
+  ],
+  "risksAndWarnings": [
+    "Kritisches Risiko oder Warnung 1"
+  ],
+  "recommendations": [
+    "Handlungsempfehlung 1 für diese Woche",
+    "Handlungsempfehlung 2 für diese Woche",
+    "Handlungsempfehlung 3 für diese Woche"
+  ]
+}
+Hinweis für status: Verwende ausschließlich "optimal", "warning" oder "low".`;
+}
+
+function parseFeedbackResponse(rawText) {
+  try {
+    let cleaned = rawText
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .trim();
+
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace  = cleaned.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace !== -1) {
+      cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+    }
+
+    const parsed = JSON.parse(cleaned);
+
+    const score = typeof parsed.score === "number" ? Math.min(100, Math.max(0, Math.round(parsed.score))) : 75;
+    const rating = parsed.rating || "Solider Trainingsaufbau";
+    const summary = parsed.summary || "Dein Trainingsplan wurde analysiert.";
+
+    const disciplineAnalysis = parsed.disciplineAnalysis || {
+      swim: { status: "optimal", comment: "Solide Einheiten." },
+      ride: { status: "optimal", comment: "Gute Umfänge." },
+      run:  { status: "optimal", comment: "Ausgewogener Laufumfang." }
+    };
+
+    const strengths = Array.isArray(parsed.strengths) && parsed.strengths.length > 0
+      ? parsed.strengths
+      : ["Ausgewogene Wochenstruktur", "Gute Einheitenverteilung"];
+
+    const risksAndWarnings = Array.isArray(parsed.risksAndWarnings) && parsed.risksAndWarnings.length > 0
+      ? parsed.risksAndWarnings
+      : ["Auf ausreichende Regeneration und Schlaf zwischen fordernden Einheiten achten."];
+
+    const recommendations = Array.isArray(parsed.recommendations) && parsed.recommendations.length > 0
+      ? parsed.recommendations
+      : ["Plane ausreichend Schlaf ein", "Achte auf konsequente Grundlageneinheiten in Zone 2"];
+
+    return {
+      score,
+      rating,
+      summary,
+      disciplineAnalysis,
+      strengths,
+      risksAndWarnings,
+      recommendations,
+    };
+  } catch (err) {
+    console.error("[gemini] JSON Parse-Fehler beim Feedback:", err, rawText);
+    return null;
+  }
+}
+
+function renderPlanFeedback(feedback, timeframeDays, activitiesCount) {
+  const metaEl = document.getElementById("ai-feedback-meta");
+  const contentEl = document.getElementById("ai-feedback-content");
+  if (!contentEl) return;
+
+  if (metaEl) {
+    const timeStr = new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+    metaEl.textContent = `Basis: Letzte ${timeframeDays} Tage (${activitiesCount} Einheiten) • ${timeStr} Uhr`;
+  }
+
+  let scoreClass = "score-high";
+  if (feedback.score < 60) {
+    scoreClass = "score-low";
+  } else if (feedback.score < 80) {
+    scoreClass = "score-mid";
+  }
+
+  const discMap = {
+    swim: { title: "Schwimmen", icon: "🏊" },
+    ride: { title: "Radfahren", icon: "🚴" },
+    run:  { title: "Laufen",    icon: "🏃" }
+  };
+
+  const statusLabels = {
+    optimal: { text: "Optimal abgestimmt", class: "status-optimal" },
+    warning: { text: "Optimierungsbedarf", class: "status-warning" },
+    low:     { text: "Ausbaufähig",        class: "status-low" }
+  };
+
+  const discHtml = Object.entries(feedback.disciplineAnalysis || {}).map(([key, disc]) => {
+    const meta = discMap[key] || { title: key, icon: "⚡" };
+    const statusInfo = statusLabels[disc?.status] || statusLabels.optimal;
+    return `
+      <div class="feedback-disc-card">
+        <div class="disc-card-header">
+          <div class="disc-card-title">
+            <span class="disc-icon">${meta.icon}</span>
+            <span>${escapeHtml(meta.title)}</span>
+          </div>
+          <span class="disc-status-pill ${statusInfo.class}">${escapeHtml(statusInfo.text)}</span>
+        </div>
+        <p class="disc-card-comment">${escapeHtml(disc?.comment || "")}</p>
+      </div>
+    `;
+  }).join("");
+
+  const strengthsHtml = (feedback.strengths || []).map(s => `<li>${escapeHtml(s)}</li>`).join("");
+  const risksHtml = (feedback.risksAndWarnings || []).map(r => `<li>${escapeHtml(r)}</li>`).join("");
+  const recsHtml = (feedback.recommendations || []).map(rec => `<li>${escapeHtml(rec)}</li>`).join("");
+
+  contentEl.innerHTML = `
+    <div class="feedback-overview-banner">
+      <div class="feedback-score-badge ${scoreClass}">
+        <div class="score-circle">
+          <span class="score-number">${feedback.score}</span>
+          <span class="score-max">/100</span>
+        </div>
+        <span class="score-label">${escapeHtml(feedback.rating)}</span>
+      </div>
+      <div class="feedback-summary-box">
+        <div class="feedback-summary-header">
+          <span class="summary-badge">COACH-EINSCHÄTZUNG</span>
+          <h4>Gesamtbewertung des aktuellen Trainingsplans</h4>
+        </div>
+        <p class="feedback-summary-text">${escapeHtml(feedback.summary)}</p>
+      </div>
+    </div>
+
+    <div class="feedback-disciplines-section">
+      <h4 class="feedback-section-title">Analyse nach Disziplinen</h4>
+      <div class="feedback-disciplines-grid">
+        ${discHtml}
+      </div>
+    </div>
+
+    <div class="feedback-details-cols">
+      <div class="feedback-col feedback-strengths">
+        <h4><span class="col-icon">✅</span> Stärken des aktuellen Plans</h4>
+        <ul class="feedback-bullet-list">
+          ${strengthsHtml}
+        </ul>
+      </div>
+      <div class="feedback-col feedback-risks">
+        <h4><span class="col-icon">⚠️</span> Potenzielle Risiken &amp; Warnungen</h4>
+        <ul class="feedback-bullet-list">
+          ${risksHtml}
+        </ul>
+      </div>
+    </div>
+
+    <div class="feedback-recommendations-box">
+      <h4><span class="col-icon">🎯</span> Konkrete Handlungsempfehlungen für diese Woche</h4>
+      <ol class="feedback-recs-list">
+        ${recsHtml}
+      </ol>
+    </div>
+  `;
 }
 
 // ── Prompt-Builder ─────────────────────────────────────────

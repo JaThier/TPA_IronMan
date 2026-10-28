@@ -178,9 +178,14 @@
                 </div>
               </div>
 
-              <button id="ai-adjust-btn" class="btn btn-ai" aria-label="Trainingsplan von KI anpassen lassen">
-                🤖 Plan von KI anpassen lassen
-              </button>
+              <div class="ai-button-group">
+                <button type="button" id="ai-feedback-btn" class="btn btn-ai-feedback" aria-label="Trainingsplan von KI analysieren lassen und Feedback einholen">
+                  🔍 Plan analysieren &amp; Feedback
+                </button>
+                <button type="button" id="ai-adjust-btn" class="btn btn-ai" aria-label="Trainingsplan von KI anpassen lassen">
+                  🤖 Plan von KI anpassen lassen
+                </button>
+              </div>
             </div>
 
             <!-- Vorschau über gefilterte Aktivitäten -->
@@ -190,6 +195,23 @@
 
             <!-- KI-Statusanzeige -->
             <div id="ai-status" class="hidden" role="status" aria-live="polite"></div>
+          </div>
+        </div>
+
+        <!-- ── KI-Feedback & Analyse Card (Dynamisch nach Analyse befüllt) ── -->
+        <div id="ai-feedback-card" class="card ai-feedback-card hidden" style="margin-bottom: 1.5rem;" aria-live="polite">
+          <div class="card-header ai-feedback-header">
+            <div class="card-title">
+              <span class="icon" aria-hidden="true">💡</span>
+              <h3 id="ai-feedback-title">KI-Analyse &amp; Feedback zum aktuellen Trainingsplan</h3>
+            </div>
+            <div class="feedback-meta-actions">
+              <span id="ai-feedback-meta" class="plan-meta text-muted"></span>
+              <button type="button" id="ai-feedback-close-btn" class="feedback-close-btn" aria-label="Feedback schließen">✕</button>
+            </div>
+          </div>
+          <div class="ai-feedback-body" id="ai-feedback-content">
+            <!-- Wird per gemini.js befüllt -->
           </div>
         </div>
 

@@ -351,7 +351,11 @@ const IRONMAN_TEMPLATE = {
     monday: {
       type: "rest",
       subtypes: ["ruhe", "mobility"],
-      duration: 0,
+      parts: [
+        { id: "ruhe", label: "Komplette Ruhe", icon: "🛏️", duration: 0, distance: null, speed: "", intensity: "easy" },
+        { id: "mobility", label: "Stretching & Mobilität", icon: "🧘", duration: 20, distance: null, speed: "", intensity: "easy" }
+      ],
+      duration: 20,
       distance: null,
       speed: "",
       intensity: "easy",
@@ -361,9 +365,13 @@ const IRONMAN_TEMPLATE = {
     tuesday: {
       type: "ride",
       subtypes: ["intervalle", "schwelle"],
+      parts: [
+        { id: "intervalle", label: "Intervalle", icon: "⚡", duration: 45, distance: 20, speed: "34 km/h", intensity: "hard" },
+        { id: "schwelle", label: "Schwelle", icon: "🔥", duration: 30, distance: 15, speed: "32 km/h", intensity: "hard" }
+      ],
       duration: 75,
       distance: 35,
-      speed: "32 km/h",
+      speed: "34 km/h • 32 km/h",
       intensity: "hard",
       description: "Rad-Schwellenintervalle",
       notes: "15min Warmup, 3x 10min Schwellenbereich (85-90 rpm, 5min Pause), 15min Cooldown."
@@ -371,9 +379,13 @@ const IRONMAN_TEMPLATE = {
     wednesday: {
       type: "swim",
       subtypes: ["technik", "intervalle"],
+      parts: [
+        { id: "technik", label: "Technik", icon: "🎯", duration: 25, distance: 1.0, speed: "1:55 min/100m", intensity: "easy" },
+        { id: "intervalle", label: "Intervalle", icon: "⚡", duration: 35, distance: 1.5, speed: "1:40 min/100m", intensity: "moderate" }
+      ],
       duration: 60,
       distance: 2.5,
-      speed: "1:45 min/100m",
+      speed: "1:55 min/100m • 1:40 min/100m",
       intensity: "moderate",
       description: "Schwimmtechnik & Intervalle",
       notes: "400m Einschwimmen, 400m Technik (Abschlag, Einarmig), 10x 100m zügig (20s Pause), 200m Ausschwimmen."
@@ -381,6 +393,9 @@ const IRONMAN_TEMPLATE = {
     thursday: {
       type: "run",
       subtypes: ["zone2"],
+      parts: [
+        { id: "zone2", label: "Zone 2", icon: "💚", duration: 60, distance: 11, speed: "5:25 min/km", intensity: "easy" }
+      ],
       duration: 60,
       distance: 11,
       speed: "5:25 min/km",
@@ -391,29 +406,41 @@ const IRONMAN_TEMPLATE = {
     friday: {
       type: "swim",
       subtypes: ["distance", "technik"],
+      parts: [
+        { id: "distance", label: "Distance", icon: "🌊", duration: 35, distance: 1.6, speed: "1:48 min/100m", intensity: "moderate" },
+        { id: "technik", label: "Technik", icon: "🎯", duration: 15, distance: 0.6, speed: "1:55 min/100m", intensity: "easy" }
+      ],
       duration: 50,
       distance: 2.2,
-      speed: "1:50 min/100m",
-      intensity: "easy",
+      speed: "1:48 min/100m • 1:55 min/100m",
+      intensity: "moderate",
       description: "Dauerschwimmen & Ausdauer",
       notes: "Ausdauerserie mit Pullbuoy und Paddles, Fokus auf sauberen Zug und hohe Ellbogen."
     },
     saturday: {
       type: "ride",
       subtypes: ["endurance", "schwelle"],
+      parts: [
+        { id: "endurance", label: "Endurance", icon: "🔋", duration: 110, distance: 55, speed: "29 km/h", intensity: "moderate" },
+        { id: "schwelle", label: "Schwelle", icon: "🔥", duration: 40, distance: 20, speed: "32 km/h", intensity: "hard" }
+      ],
       duration: 150,
       distance: 75,
-      speed: "30 km/h",
-      intensity: "moderate",
+      speed: "29 km/h • 32 km/h",
+      intensity: "hard",
       description: "Lange Ausfahrt mit Tempoblöcken",
       notes: "Grundlagenausfahrt mit 2x 15min im geplanten Wettkampftempo. Regelmäßig Kohlenhydrate zuführen."
     },
     sunday: {
       type: "run",
       subtypes: ["longrun", "zone2"],
+      parts: [
+        { id: "longrun", label: "Longrun", icon: "🏃‍♂️", duration: 75, distance: 13, speed: "5:45 min/km", intensity: "moderate" },
+        { id: "zone2", label: "Zone 2", icon: "💚", duration: 30, distance: 5, speed: "5:30 min/km", intensity: "easy" }
+      ],
       duration: 105,
       distance: 18,
-      speed: "5:45 min/km",
+      speed: "5:45 min/km • 5:30 min/km",
       intensity: "moderate",
       description: "Langer Vorbereitungslauf (Longrun)",
       notes: "Konstantes Wohlfühltempo, die letzten 3 km leicht progressiv. Gels alle 25 Min. testen."
@@ -424,13 +451,13 @@ const IRONMAN_TEMPLATE = {
 const RESET_TEMPLATE = {
   coachNote: "Regenerationswoche / Komplette Erholung",
   weekPlan: {
-    monday:    { type: "rest", subtypes: ["ruhe"], duration: 0, distance: null, speed: "", intensity: "easy", description: "Ruhetag", notes: "Volle Regeneration." },
-    tuesday:   { type: "rest", subtypes: ["ruhe"], duration: 0, distance: null, speed: "", intensity: "easy", description: "Ruhetag", notes: "Volle Regeneration." },
-    wednesday: { type: "rest", subtypes: ["ruhe"], duration: 0, distance: null, speed: "", intensity: "easy", description: "Ruhetag", notes: "Volle Regeneration." },
-    thursday:  { type: "rest", subtypes: ["ruhe"], duration: 0, distance: null, speed: "", intensity: "easy", description: "Ruhetag", notes: "Volle Regeneration." },
-    friday:    { type: "rest", subtypes: ["ruhe"], duration: 0, distance: null, speed: "", intensity: "easy", description: "Ruhetag", notes: "Volle Regeneration." },
-    saturday:  { type: "rest", subtypes: ["ruhe"], duration: 0, distance: null, speed: "", intensity: "easy", description: "Ruhetag", notes: "Volle Regeneration." },
-    sunday:    { type: "rest", subtypes: ["ruhe"], duration: 0, distance: null, speed: "", intensity: "easy", description: "Ruhetag", notes: "Volle Regeneration." }
+    monday:    { type: "rest", subtypes: ["ruhe"], parts: [{ id: "ruhe", label: "Komplette Ruhe", icon: "🛏️", duration: 0, distance: null, speed: "", intensity: "easy" }], duration: 0, distance: null, speed: "", intensity: "easy", description: "Ruhetag", notes: "Volle Regeneration." },
+    tuesday:   { type: "rest", subtypes: ["ruhe"], parts: [{ id: "ruhe", label: "Komplette Ruhe", icon: "🛏️", duration: 0, distance: null, speed: "", intensity: "easy" }], duration: 0, distance: null, speed: "", intensity: "easy", description: "Ruhetag", notes: "Volle Regeneration." },
+    wednesday: { type: "rest", subtypes: ["ruhe"], parts: [{ id: "ruhe", label: "Komplette Ruhe", icon: "🛏️", duration: 0, distance: null, speed: "", intensity: "easy" }], duration: 0, distance: null, speed: "", intensity: "easy", description: "Ruhetag", notes: "Volle Regeneration." },
+    thursday:  { type: "rest", subtypes: ["ruhe"], parts: [{ id: "ruhe", label: "Komplette Ruhe", icon: "🛏️", duration: 0, distance: null, speed: "", intensity: "easy" }], duration: 0, distance: null, speed: "", intensity: "easy", description: "Ruhetag", notes: "Volle Regeneration." },
+    friday:    { type: "rest", subtypes: ["ruhe"], parts: [{ id: "ruhe", label: "Komplette Ruhe", icon: "🛏️", duration: 0, distance: null, speed: "", intensity: "easy" }], duration: 0, distance: null, speed: "", intensity: "easy", description: "Ruhetag", notes: "Volle Regeneration." },
+    saturday:  { type: "rest", subtypes: ["ruhe"], parts: [{ id: "ruhe", label: "Komplette Ruhe", icon: "🛏️", duration: 0, distance: null, speed: "", intensity: "easy" }], duration: 0, distance: null, speed: "", intensity: "easy", description: "Ruhetag", notes: "Volle Regeneration." },
+    sunday:    { type: "rest", subtypes: ["ruhe"], parts: [{ id: "ruhe", label: "Komplette Ruhe", icon: "🛏️", duration: 0, distance: null, speed: "", intensity: "easy" }], duration: 0, distance: null, speed: "", intensity: "easy", description: "Ruhetag", notes: "Volle Regeneration." }
   }
 };
 
@@ -527,24 +554,61 @@ function renderAccountPlanView(plan) {
       const disc = PLAN_DISCIPLINES[day.type] || PLAN_DISCIPLINES.rest;
       const isRest = day.type === "rest";
 
-      // Subtype-Chips
-      let chipsHtml = "";
-      if (Array.isArray(day.subtypes) && day.subtypes.length > 0) {
-        chipsHtml = day.subtypes.map((st) => {
-          const lbl = getSubtypeLabel(day.type, st);
-          const icon = getSubtypeIcon(day.type, st);
-          return `<span class="subtype-pill"><span class="pill-icon">${icon}</span>${escapeHtml(lbl)}</span>`;
-        }).join("");
-      }
+      let partsOrMetricsHtml = "";
 
-      // Metriken (Dauer, Distanz, Speed/Pace)
-      const metricItems = [];
-      metricItems.push(`<span class="metric-pill" title="Dauer">⏱️ ${day.duration > 0 ? `${day.duration} Min.` : 'Ruhetag'}</span>`);
-      if (day.distance !== null && day.distance !== "" && day.distance !== undefined && day.distance > 0) {
-        metricItems.push(`<span class="metric-pill" title="Distanz">📍 ${day.distance} km</span>`);
-      }
-      if (day.speed && day.speed.trim() !== "") {
-        metricItems.push(`<span class="metric-pill" title="Geschwindigkeit/Pace">⚡ ${escapeHtml(day.speed)}</span>`);
+      if (Array.isArray(day.parts) && day.parts.length > 1) {
+        // MEHRERE ARTEN: Jede Art mit eigener Zeile und individuellen Werten
+        partsOrMetricsHtml = `
+          <div class="day-parts-view-list">
+            ${day.parts.map(p => `
+              <div class="day-part-item">
+                <div class="part-item-header">
+                  <span class="subtype-pill">
+                    <span class="pill-icon">${p.icon || '•'}</span>
+                    <span>${escapeHtml(p.label)}</span>
+                  </span>
+                  <span class="part-mini-intensity intensity-${p.intensity || 'easy'}">
+                    ${p.intensity === 'hard' ? 'EB' : (p.intensity === 'moderate' ? 'GA2' : 'GA1')}
+                  </span>
+                </div>
+                <div class="part-metrics-subline">
+                  <span class="metric-mini" title="Dauer">⏱️ ${p.duration > 0 ? `${p.duration} Min.` : '–'}</span>
+                  ${p.distance != null ? `<span class="metric-mini" title="Distanz">📍 ${p.distance} km</span>` : ''}
+                  ${p.speed ? `<span class="metric-mini" title="Pace/Speed">⚡ ${escapeHtml(p.speed)}</span>` : ''}
+                </div>
+              </div>
+            `).join("")}
+          </div>
+          <div class="day-total-badge">
+            Gesamt: ⏱️ ${day.duration} Min.${day.distance != null ? ` • 📍 ${day.distance} km` : ''}
+          </div>
+        `;
+      } else {
+        // Einzige Art oder Standard
+        let chipsHtml = "";
+        if (Array.isArray(day.subtypes) && day.subtypes.length > 0) {
+          chipsHtml = day.subtypes.map((st) => {
+            const lbl = getSubtypeLabel(day.type, st);
+            const icon = getSubtypeIcon(day.type, st);
+            return `<span class="subtype-pill"><span class="pill-icon">${icon}</span>${escapeHtml(lbl)}</span>`;
+          }).join("");
+        }
+
+        const metricItems = [];
+        metricItems.push(`<span class="metric-pill" title="Dauer">⏱️ ${day.duration > 0 ? `${day.duration} Min.` : 'Ruhetag'}</span>`);
+        if (day.distance !== null && day.distance !== "" && day.distance !== undefined && day.distance > 0) {
+          metricItems.push(`<span class="metric-pill" title="Distanz">📍 ${day.distance} km</span>`);
+        }
+        if (day.speed && day.speed.trim() !== "") {
+          metricItems.push(`<span class="metric-pill" title="Geschwindigkeit/Pace">⚡ ${escapeHtml(day.speed)}</span>`);
+        }
+
+        partsOrMetricsHtml = `
+          ${chipsHtml ? `<div class="day-subtype-pills">${chipsHtml}</div>` : ''}
+          <div class="day-metrics-row">
+            ${metricItems.join("")}
+          </div>
+        `;
       }
 
       // Notizen / Sonstige Infos
@@ -562,11 +626,7 @@ function renderAccountPlanView(plan) {
               <span class="day-badge ${disc.badgeClass}">${disc.label.toUpperCase()}</span>
             </div>
 
-            ${chipsHtml ? `<div class="day-subtype-pills">${chipsHtml}</div>` : ''}
-
-            <div class="day-metrics-row">
-              ${metricItems.join("")}
-            </div>
+            ${partsOrMetricsHtml}
 
             ${noteContent ? `<p class="day-note-text" title="${escapeHtml(noteContent)}">${escapeHtml(noteContent)}</p>` : ''}
           </div>
@@ -598,9 +658,39 @@ function openAccountPlanEditor(plan) {
       subtypes = [existing.subtypes];
     }
 
+    const partsObj = {};
+    if (Array.isArray(existing.parts)) {
+      for (const p of existing.parts) {
+        if (p && p.id) {
+          partsObj[p.id] = {
+            duration: typeof p.duration === "number" ? p.duration : (type === "rest" ? 0 : 30),
+            distance: p.distance != null ? p.distance : "",
+            speed: p.speed || "",
+            intensity: p.intensity || "moderate"
+          };
+        }
+      }
+    }
+
+    // Falls Subtypes aktiv sind, die noch nicht in partsObj stehen, Defaults erzeugen
+    for (const stId of subtypes) {
+      if (!partsObj[stId]) {
+        let defInt = "moderate";
+        if (stId.includes("intervalle") || stId.includes("schwelle") || stId.includes("race")) defInt = "hard";
+        if (stId.includes("ruhe") || stId.includes("mobility") || stId.includes("zone2")) defInt = "easy";
+        partsObj[stId] = {
+          duration: typeof existing.duration === "number" && subtypes.length === 1 ? existing.duration : (type === "rest" ? 0 : 30),
+          distance: subtypes.length === 1 && existing.distance != null ? existing.distance : "",
+          speed: subtypes.length === 1 && existing.speed ? existing.speed : "",
+          intensity: subtypes.length === 1 && existing.intensity ? existing.intensity : defInt
+        };
+      }
+    }
+
     editorState[dayKey] = {
       type,
       subtypes,
+      parts: partsObj,
       duration: typeof existing.duration === "number" ? existing.duration : (type === "rest" ? 0 : 60),
       distance: existing.distance != null ? existing.distance : "",
       speed: existing.speed || "",
@@ -674,36 +764,86 @@ function renderDayEditorCard(dayKey) {
     `;
   }).join("");
 
-  return `
-    <div class="plan-day-editor-card" id="editor-day-${dayKey}" data-day="${dayKey}">
-      <div class="day-editor-header">
-        <div class="day-editor-title">
-          <span class="day-short-badge">${dayConf.short}</span>
-          <h4>${dayConf.full}</h4>
-        </div>
-        <span class="day-current-type-badge ${currentDisc.badgeClass}">
-          ${currentDisc.icon} ${currentDisc.fullLabel}
-        </span>
-      </div>
+  // Einstellungs-Zeilen: PRO AUSGEWÄHLTE ART EINE EIGENE ZEILE!
+  let settingsSectionHtml = "";
+  if (state.subtypes.length > 0) {
+    const rowsHtml = state.subtypes.map(stId => {
+      const stConf = currentDisc.subtypes.find(s => s.id === stId) || { id: stId, label: stId, icon: "•" };
+      if (!state.parts) state.parts = {};
+      if (!state.parts[stId]) {
+        let defInt = "moderate";
+        if (stId.includes("intervalle") || stId.includes("schwelle") || stId.includes("race")) defInt = "hard";
+        if (stId.includes("ruhe") || stId.includes("mobility") || stId.includes("zone2")) defInt = "easy";
+        state.parts[stId] = {
+          duration: state.type === "rest" ? 0 : 30,
+          distance: "",
+          speed: "",
+          intensity: defInt
+        };
+      }
+      const p = state.parts[stId];
 
-      <div class="day-editor-row">
-        <label class="editor-field-label">1. Disziplin festlegen:</label>
-        <div class="discipline-btn-group" role="group" aria-label="Disziplin für ${dayConf.full}">
-          ${discButtons}
-        </div>
-      </div>
+      return `
+        <div class="subtype-part-editor-card">
+          <div class="subtype-part-card-header">
+            <span class="part-card-badge">
+              <span class="part-card-icon">${stConf.icon}</span>
+              <span class="part-card-label">${escapeHtml(stConf.label)}</span>
+            </span>
+            <span class="part-card-hint">Werte für diese Trainingsart</span>
+          </div>
 
+          <div class="day-settings-grid">
+            <div class="form-group-sm">
+              <label for="input-dur-${dayKey}-${stId}">⏱️ Dauer (Min.)</label>
+              <input type="number" id="input-dur-${dayKey}-${stId}" class="plan-input part-input-duration"
+                data-day="${dayKey}" data-subtype="${stId}" min="0" max="720" step="5"
+                value="${p.duration != null ? p.duration : ''}" placeholder="0" />
+            </div>
+
+            <div class="form-group-sm">
+              <label for="input-dist-${dayKey}-${stId}">📍 Distanz (km)</label>
+              <input type="number" id="input-dist-${dayKey}-${stId}" class="plan-input part-input-distance"
+                data-day="${dayKey}" data-subtype="${stId}" min="0" max="300" step="0.1"
+                value="${p.distance !== '' && p.distance != null ? p.distance : ''}" placeholder="–" />
+            </div>
+
+            <div class="form-group-sm">
+              <label for="input-spd-${dayKey}-${stId}">⚡ Pace / Tempo</label>
+              <input type="text" id="input-spd-${dayKey}-${stId}" class="plan-input part-input-speed"
+                data-day="${dayKey}" data-subtype="${stId}"
+                value="${escapeHtml(p.speed || '')}" placeholder="${currentDisc.speedPlaceholder}" />
+            </div>
+
+            <div class="form-group-sm">
+              <label for="input-int-${dayKey}-${stId}">🔥 Intensität</label>
+              <select id="input-int-${dayKey}-${stId}" class="plan-select part-input-intensity"
+                data-day="${dayKey}" data-subtype="${stId}">
+                <option value="easy" ${p.intensity === 'easy' ? 'selected' : ''}>Niedrig (Easy / GA1)</option>
+                <option value="moderate" ${p.intensity === 'moderate' ? 'selected' : ''}>Mittel (Moderate / GA2)</option>
+                <option value="hard" ${p.intensity === 'hard' ? 'selected' : ''}>Hoch (Hard / EB)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    settingsSectionHtml = `
       <div class="day-editor-row">
         <label class="editor-field-label">
-          2. Art der Aktivität (mehrere kombinierbar):
+          3. Einstellungen ${state.subtypes.length > 1 ? `je Trainingsart (${state.subtypes.length} ausgewählt):` : 'zur Trainingsart:'}
         </label>
-        <div class="subtype-chips-group" role="group" aria-label="Aktivitätsarten">
-          ${subtypeChips}
+        <div class="subtype-parts-editor-list">
+          ${rowsHtml}
         </div>
       </div>
-
+    `;
+  } else {
+    // Keine spezifische Art gewählt -> Fallback Einheits-Einstellungen
+    settingsSectionHtml = `
       <div class="day-editor-row">
-        <label class="editor-field-label">3. Weitere Einstellungen:</label>
+        <label class="editor-field-label">3. Einstellungen zur Einheit:</label>
         <div class="day-settings-grid">
           <div class="form-group-sm">
             <label for="input-duration-${dayKey}">⏱️ Dauer (Min.)</label>
@@ -733,6 +873,38 @@ function renderDayEditorCard(dayKey) {
           </div>
         </div>
       </div>
+    `;
+  }
+
+  return `
+    <div class="plan-day-editor-card" id="editor-day-${dayKey}" data-day="${dayKey}">
+      <div class="day-editor-header">
+        <div class="day-editor-title">
+          <span class="day-short-badge">${dayConf.short}</span>
+          <h4>${dayConf.full}</h4>
+        </div>
+        <span class="day-current-type-badge ${currentDisc.badgeClass}">
+          ${currentDisc.icon} ${currentDisc.fullLabel}
+        </span>
+      </div>
+
+      <div class="day-editor-row">
+        <label class="editor-field-label">1. Disziplin festlegen:</label>
+        <div class="discipline-btn-group" role="group" aria-label="Disziplin für ${dayConf.full}">
+          ${discButtons}
+        </div>
+      </div>
+
+      <div class="day-editor-row">
+        <label class="editor-field-label">
+          2. Art der Aktivität (mehrere kombinierbar):
+        </label>
+        <div class="subtype-chips-group" role="group" aria-label="Aktivitätsarten">
+          ${subtypeChips}
+        </div>
+      </div>
+
+      ${settingsSectionHtml}
 
       <div class="day-editor-row">
         <label for="input-notes-${dayKey}" class="editor-field-label">
@@ -763,9 +935,21 @@ function applyTemplate(templateData) {
   for (const dayKey of PLAN_WEEKDAYS) {
     const tpl = templateData.weekPlan[dayKey];
     if (tpl) {
+      const partsObj = {};
+      if (Array.isArray(tpl.parts)) {
+        for (const p of tpl.parts) {
+          partsObj[p.id] = {
+            duration: p.duration,
+            distance: p.distance != null ? p.distance : "",
+            speed: p.speed || "",
+            intensity: p.intensity || "easy"
+          };
+        }
+      }
       editorState[dayKey] = {
         type: tpl.type,
         subtypes: [...(tpl.subtypes || [])],
+        parts: partsObj,
         duration: tpl.duration,
         distance: tpl.distance != null ? tpl.distance : "",
         speed: tpl.speed || "",
@@ -804,9 +988,50 @@ async function saveAccountPlan() {
   try {
     const finalWeekPlan = {};
     for (const dayKey of PLAN_WEEKDAYS) {
-      const st = editorState[dayKey] || { type: "rest", subtypes: [], duration: 0, distance: "", speed: "", intensity: "easy", notes: "" };
+      const st = editorState[dayKey] || { type: "rest", subtypes: [], parts: {}, duration: 0, distance: "", speed: "", intensity: "easy", notes: "" };
       const disc = PLAN_DISCIPLINES[st.type] || PLAN_DISCIPLINES.rest;
       const subtypeLabels = (st.subtypes || []).map(s => getSubtypeLabel(st.type, s));
+
+      const partsArray = [];
+      let totalDuration = 0;
+      let totalDistance = 0;
+      let hasDistance = false;
+      const speeds = [];
+      let maxIntensity = "easy";
+      const intensityRank = { easy: 1, moderate: 2, hard: 3 };
+
+      if (Array.isArray(st.subtypes) && st.subtypes.length > 0) {
+        for (const stId of st.subtypes) {
+          const p = (st.parts && st.parts[stId]) ? st.parts[stId] : {};
+          const pDur = parseInt(p.duration, 10) || 0;
+          totalDuration += pDur;
+
+          let pDist = null;
+          if (p.distance !== "" && p.distance != null && !isNaN(parseFloat(p.distance))) {
+            pDist = Math.round(parseFloat(p.distance) * 10) / 10;
+            totalDistance += pDist;
+            hasDistance = true;
+          }
+
+          const pSpd = (p.speed || "").trim();
+          if (pSpd) speeds.push(pSpd);
+
+          const pInt = p.intensity || "moderate";
+          if ((intensityRank[pInt] || 1) > (intensityRank[maxIntensity] || 1)) {
+            maxIntensity = pInt;
+          }
+
+          partsArray.push({
+            id: stId,
+            label: getSubtypeLabel(st.type, stId),
+            icon: getSubtypeIcon(st.type, stId),
+            duration: pDur,
+            distance: pDist,
+            speed: pSpd,
+            intensity: pInt
+          });
+        }
+      }
 
       let description = st.notes?.trim() || "";
       if (!description) {
@@ -817,13 +1042,25 @@ async function saveAccountPlan() {
         }
       }
 
+      const finalDuration = partsArray.length > 0 ? totalDuration : (parseInt(st.duration, 10) || 0);
+      const finalDistance = partsArray.length > 0
+        ? (hasDistance ? Math.round(totalDistance * 10) / 10 : null)
+        : (st.distance !== "" && !isNaN(parseFloat(st.distance)) ? parseFloat(st.distance) : null);
+      const finalSpeed = partsArray.length > 0
+        ? (speeds.join(" • ") || (st.speed || "").trim())
+        : (st.speed || "").trim();
+      const finalIntensity = partsArray.length > 0
+        ? maxIntensity
+        : (st.intensity || (st.type === "rest" ? "easy" : "moderate"));
+
       finalWeekPlan[dayKey] = {
         type: st.type,
         subtypes: st.subtypes || [],
-        duration: parseInt(st.duration, 10) || 0,
-        distance: st.distance !== "" && !isNaN(parseFloat(st.distance)) ? parseFloat(st.distance) : null,
-        speed: (st.speed || "").trim(),
-        intensity: st.intensity || (st.type === "rest" ? "easy" : "moderate"),
+        parts: partsArray,
+        duration: finalDuration,
+        distance: finalDistance,
+        speed: finalSpeed,
+        intensity: finalIntensity,
         description,
         notes: st.notes?.trim() || ""
       };
@@ -893,9 +1130,22 @@ function setupAccountPlanListeners() {
     editorList.addEventListener("input", (e) => {
       const target = e.target;
       const dayKey = target.dataset.day;
+      const subtype = target.dataset.subtype;
       if (!dayKey || !editorState[dayKey]) return;
 
-      if (target.classList.contains("plan-input-duration")) {
+      if (target.classList.contains("part-input-duration")) {
+        if (!editorState[dayKey].parts) editorState[dayKey].parts = {};
+        if (!editorState[dayKey].parts[subtype]) editorState[dayKey].parts[subtype] = {};
+        editorState[dayKey].parts[subtype].duration = parseInt(target.value, 10) || 0;
+      } else if (target.classList.contains("part-input-distance")) {
+        if (!editorState[dayKey].parts) editorState[dayKey].parts = {};
+        if (!editorState[dayKey].parts[subtype]) editorState[dayKey].parts[subtype] = {};
+        editorState[dayKey].parts[subtype].distance = target.value;
+      } else if (target.classList.contains("part-input-speed")) {
+        if (!editorState[dayKey].parts) editorState[dayKey].parts = {};
+        if (!editorState[dayKey].parts[subtype]) editorState[dayKey].parts[subtype] = {};
+        editorState[dayKey].parts[subtype].speed = target.value;
+      } else if (target.classList.contains("plan-input-duration")) {
         editorState[dayKey].duration = parseInt(target.value, 10) || 0;
       } else if (target.classList.contains("plan-input-distance")) {
         editorState[dayKey].distance = target.value;
@@ -910,9 +1160,14 @@ function setupAccountPlanListeners() {
     editorList.addEventListener("change", (e) => {
       const target = e.target;
       const dayKey = target.dataset.day;
+      const subtype = target.dataset.subtype;
       if (!dayKey || !editorState[dayKey]) return;
 
-      if (target.classList.contains("plan-input-intensity")) {
+      if (target.classList.contains("part-input-intensity")) {
+        if (!editorState[dayKey].parts) editorState[dayKey].parts = {};
+        if (!editorState[dayKey].parts[subtype]) editorState[dayKey].parts[subtype] = {};
+        editorState[dayKey].parts[subtype].intensity = target.value;
+      } else if (target.classList.contains("plan-input-intensity")) {
         editorState[dayKey].intensity = target.value;
       }
     });
@@ -932,10 +1187,17 @@ function setupAccountPlanListeners() {
               editorState[dayKey].speed = "";
               editorState[dayKey].intensity = "easy";
               editorState[dayKey].subtypes = ["ruhe"];
+              editorState[dayKey].parts = {
+                ruhe: { duration: 0, distance: "", speed: "", intensity: "easy" }
+              };
             } else {
               if (editorState[dayKey].duration === 0) editorState[dayKey].duration = 60;
               const disc = PLAN_DISCIPLINES[newType];
-              editorState[dayKey].subtypes = disc && disc.subtypes.length > 0 ? [disc.subtypes[0].id] : [];
+              const firstSt = disc && disc.subtypes.length > 0 ? disc.subtypes[0].id : null;
+              editorState[dayKey].subtypes = firstSt ? [firstSt] : [];
+              editorState[dayKey].parts = firstSt ? {
+                [firstSt]: { duration: 60, distance: "", speed: "", intensity: "moderate" }
+              } : {};
             }
             updateDayEditorCard(dayKey);
           }
@@ -952,11 +1214,22 @@ function setupAccountPlanListeners() {
           const idx = arr.indexOf(subtypeId);
           if (idx > -1) {
             arr.splice(idx, 1);
-            subtypeBtn.classList.remove("active");
           } else {
             arr.push(subtypeId);
-            subtypeBtn.classList.add("active");
+            if (!editorState[dayKey].parts) editorState[dayKey].parts = {};
+            if (!editorState[dayKey].parts[subtypeId]) {
+              let defInt = "moderate";
+              if (subtypeId.includes("intervalle") || subtypeId.includes("schwelle") || subtypeId.includes("race")) defInt = "hard";
+              if (subtypeId.includes("ruhe") || subtypeId.includes("mobility") || subtypeId.includes("zone2")) defInt = "easy";
+              editorState[dayKey].parts[subtypeId] = {
+                duration: editorState[dayKey].type === "rest" ? 0 : 30,
+                distance: "",
+                speed: "",
+                intensity: defInt
+              };
+            }
           }
+          updateDayEditorCard(dayKey);
         }
         return;
       }

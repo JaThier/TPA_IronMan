@@ -522,17 +522,49 @@ function renderTrainingPlan(plan) {
     const dayLabel = WEEKDAY_DE[dayKey] || dayKey;
     const isRest = day.type === "rest";
 
-    // Subtype-Pills falls vorhanden
-    let subtypesHtml = "";
-    if (Array.isArray(day.subtypes) && day.subtypes.length > 0) {
-      subtypesHtml = `<div class="day-subtype-pills">${day.subtypes.map(s => `<span class="subtype-pill">${escapeHtml(s)}</span>`).join("")}</div>`;
-    }
+    let partsOrMetricsHtml = "";
+    if (Array.isArray(day.parts) && day.parts.length > 1) {
+      partsOrMetricsHtml = `
+        <div class="day-parts-view-list">
+          ${day.parts.map(p => `
+            <div class="day-part-item">
+              <div class="part-item-header">
+                <span class="subtype-pill">
+                  <span class="pill-icon">${p.icon || '•'}</span>
+                  <span>${escapeHtml(p.label)}</span>
+                </span>
+                <span class="part-mini-intensity intensity-${p.intensity || 'easy'}">
+                  ${p.intensity === 'hard' ? 'EB' : (p.intensity === 'moderate' ? 'GA2' : 'GA1')}
+                </span>
+              </div>
+              <div class="part-metrics-subline">
+                <span class="metric-mini">⏱️ ${p.duration > 0 ? `${p.duration} Min.` : '–'}</span>
+                ${p.distance != null ? `<span class="metric-mini">📍 ${p.distance} km</span>` : ''}
+                ${p.speed ? `<span class="metric-mini">⚡ ${escapeHtml(p.speed)}</span>` : ''}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+        <div class="day-total-badge">
+          Gesamt: ⏱️ ${day.duration} Min.${day.distance != null ? ` • 📍 ${day.distance} km` : ''}
+        </div>
+      `;
+    } else {
+      let subtypesHtml = "";
+      if (Array.isArray(day.subtypes) && day.subtypes.length > 0) {
+        subtypesHtml = `<div class="day-subtype-pills">${day.subtypes.map(s => `<span class="subtype-pill">${escapeHtml(s)}</span>`).join("")}</div>`;
+      }
 
-    // Metriken (Dauer, Distanz, Speed/Pace)
-    const metricsParts = [];
-    metricsParts.push(`⏱️ ${day.duration > 0 ? `${day.duration} Min.` : 'Ruhetag'}`);
-    if (day.distance) metricsParts.push(`📍 ${day.distance} km`);
-    if (day.speed) metricsParts.push(`⚡ ${escapeHtml(day.speed)}`);
+      const metricsParts = [];
+      metricsParts.push(`⏱️ ${day.duration > 0 ? `${day.duration} Min.` : 'Ruhetag'}`);
+      if (day.distance) metricsParts.push(`📍 ${day.distance} km`);
+      if (day.speed) metricsParts.push(`⚡ ${escapeHtml(day.speed)}`);
+
+      partsOrMetricsHtml = `
+        ${subtypesHtml}
+        <div class="day-duration">${metricsParts.join(" &bull; ")}</div>
+      `;
+    }
 
     const noteOrDesc = day.notes || day.description || "";
 
@@ -546,8 +578,7 @@ function renderTrainingPlan(plan) {
           <div class="day-type-badge badge-${(day.type || 'other').toLowerCase()}">
             ${day.type?.toUpperCase()}
           </div>
-          ${subtypesHtml}
-          <div class="day-duration">${metricsParts.join(" &bull; ")}</div>
+          ${partsOrMetricsHtml}
           ${noteOrDesc ? `<p class="day-desc">${escapeHtml(noteOrDesc)}</p>` : ''}
         </div>
         <div class="day-intensity-bar intensity-${day.intensity || 'easy'}"></div>

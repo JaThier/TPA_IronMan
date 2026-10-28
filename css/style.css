@@ -2339,5 +2339,136 @@ body {
   box-shadow:   0 0 0 3px var(--clr-accent-glow);
 }
 
+/* ── Einstellungen je ausgewählter Art im Editor ──────────── */
+.subtype-parts-editor-list {
+  display:        flex;
+  flex-direction: column;
+  gap:            0.875rem;
+  margin-top:     0.25rem;
+}
+
+.subtype-part-editor-card {
+  background:       rgba(10, 12, 18, 0.45);
+  border:           1px solid rgba(255, 255, 255, 0.08);
+  border-left:      3px solid var(--clr-accent);
+  border-radius:    var(--radius-sm);
+  padding:          0.85rem 1rem;
+  display:          flex;
+  flex-direction:   column;
+  gap:              0.65rem;
+  transition:       var(--transition);
+}
+
+.subtype-part-editor-card:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  border-left-color: var(--clr-accent);
+}
+
+.subtype-part-card-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  flex-wrap:       wrap;
+  gap:             0.5rem;
+}
+
+.part-card-badge {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           0.4rem;
+  font-size:     0.8125rem;
+  font-weight:   700;
+  color:         #fff;
+  background:    rgba(232, 57, 30, 0.15);
+  border:        1px solid var(--clr-accent-glow);
+  padding:       0.2rem 0.65rem;
+  border-radius: 99px;
+}
+
+.part-card-icon {
+  font-size: 0.95rem;
+}
+
+.part-card-hint {
+  font-size:  0.75rem;
+  color:      var(--clr-text-muted);
+  font-style: italic;
+}
+
+/* ── Aufteilung der Aktivitäten in der Plan-Ansicht ──────── */
+.day-parts-view-list {
+  display:        flex;
+  flex-direction: column;
+  gap:            0.45rem;
+  margin:         0.25rem 0;
+}
+
+.day-part-item {
+  background:    rgba(10, 12, 18, 0.4);
+  border:        1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  padding:       0.45rem 0.6rem;
+  display:       flex;
+  flex-direction: column;
+  gap:           0.3rem;
+}
+
+.part-item-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  gap:             0.35rem;
+}
+
+.part-mini-intensity {
+  font-size:      0.625rem;
+  font-weight:    800;
+  padding:        0.1rem 0.35rem;
+  border-radius:  3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color:          #fff;
+}
+
+.part-mini-intensity.intensity-easy {
+  background: #16a34a;
+}
+
+.part-mini-intensity.intensity-moderate {
+  background: #ca8a04;
+}
+
+.part-mini-intensity.intensity-hard {
+  background: var(--clr-accent);
+}
+
+.part-metrics-subline {
+  display:     flex;
+  flex-wrap:   wrap;
+  gap:         0.35rem;
+  font-size:   0.7125rem;
+  font-family: monospace;
+}
+
+.metric-mini {
+  background:    rgba(0, 0, 0, 0.25);
+  padding:       0.12rem 0.35rem;
+  border-radius: 3px;
+  border:        1px solid rgba(255, 255, 255, 0.04);
+  color:         var(--clr-text-dim);
+}
+
+.day-total-badge {
+  font-size:     0.725rem;
+  font-weight:   700;
+  color:         var(--clr-accent);
+  padding:       0.2rem 0.45rem;
+  background:    rgba(232, 57, 30, 0.08);
+  border-radius: var(--radius-sm);
+  margin-top:    0.2rem;
+  width:         fit-content;
+}
+
+
 
 

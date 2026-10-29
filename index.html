@@ -84,6 +84,9 @@
         <button class="nav-tab" data-tab="plan" role="tab" aria-selected="false" id="tab-plan">
           <span class="tab-icon">📋</span> Trainingsplan
         </button>
+        <button class="nav-tab" data-tab="ai" role="tab" aria-selected="false" id="tab-ai">
+          <span class="tab-icon">🤖</span> KI-Assistenz
+        </button>
         <button class="nav-tab" data-tab="hub" role="tab" aria-selected="false" id="tab-hub">
           <span class="tab-icon">🏆</span> Hub
         </button>
@@ -133,16 +136,111 @@
       </section>
 
       <!-- ════════════════════════════════════════════════════
-           REITER 2: Trainingsplan (mit Zeitraum-Konfiguration)
+           REITER 2: Trainingsplan (Übersicht & Manueller Editor)
       ════════════════════════════════════════════════════ -->
       <section id="view-plan" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-plan">
+
+        <!-- ── Trainingsplan-Bereich & Editor ── -->
+        <div class="card account-plan-card" id="account-plan-card">
+
+          <div class="card-header account-plan-header">
+            <div class="card-title">
+              <span class="icon" aria-hidden="true">📋</span>
+              <h3 id="account-plan-title">Mein aktueller Trainingsplan</h3>
+            </div>
+            <div class="account-plan-header-actions">
+              <span id="account-plan-status-badge" class="plan-meta text-muted" aria-live="polite">
+                Lade Trainingsplan…
+              </span>
+              <button type="button" id="account-plan-toggle-mode-btn" class="btn btn-secondary btn-sm" style="width: auto;">
+                <span class="btn-icon">✏️</span> <span id="account-plan-toggle-text">Plan bearbeiten</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Modus 1: Anzeige-Ansicht (Standard) -->
+          <div id="account-plan-view-container">
+            <!-- Coach-Notiz / Wochenfokus -->
+            <div id="account-plan-coach-note-box" class="coach-note-banner hidden" style="margin-bottom: 1.25rem;">
+              <strong class="coach-title">💬 Notiz &amp; Wochenfokus:</strong>
+              <span id="account-plan-coach-note-text"></span>
+            </div>
+
+            <!-- 7-Tage-Übersicht -->
+            <div id="account-plan-days-grid" class="account-plan-grid" role="list" aria-label="Wochentrainingsplan Übersicht">
+              <div class="empty-plan-placeholder">
+                <div class="spinner"></div>
+                <span>Lade aktuellen Trainingsplan…</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modus 2: Manueller Editor (Initial ausgeblendet) -->
+          <div id="account-plan-edit-container" class="hidden">
+            <div class="account-plan-editor-toolbar">
+              <div class="editor-template-actions">
+                <span class="editor-toolbar-label">Schnell-Vorlagen:</span>
+                <button type="button" id="btn-template-ironman" class="btn btn-secondary btn-sm" title="Ausgewogene Ironman-Trainingswoche laden">
+                  ⚡ Ironman-Vorlage
+                </button>
+                <button type="button" id="btn-template-reset" class="btn btn-secondary btn-sm" title="Alle Tage auf Ruhetag setzen">
+                  🧹 Alle Ruhetag
+                </button>
+              </div>
+              <div class="editor-actions-top">
+                <button type="button" id="account-plan-cancel-btn-top" class="btn btn-secondary btn-sm">
+                  Abbrechen
+                </button>
+                <button type="button" id="account-plan-save-btn-top" class="btn btn-primary btn-sm">
+                  💾 Speichern
+                </button>
+              </div>
+            </div>
+
+            <p class="editor-helper-text">
+              Wähle für jeden Wochentag eine oder mehrere Disziplinen (z. B. <em>Rad + Laufen</em> für Koppeltraining). Der <strong>Ruhetag</strong> deaktiviert automatisch die Sportarten. Für jede gewählte Disziplin lassen sich die Trainingsarten frei wählen und deren Parameter (Dauer, Distanz, Tempo, Intensität) individuell festlegen.
+            </p>
+
+            <!-- 7 Tage Eingabemasken (Montag - Sonntag) -->
+            <div id="account-plan-editor-days" class="account-plan-editor-list">
+              <!-- Dynamisch via account.js befüllt -->
+            </div>
+
+            <!-- Allgemeiner Wochenfokus / Notiz -->
+            <div class="form-group" style="margin-top: 1.5rem;">
+              <label for="account-plan-edit-coachnote">
+                💬 Wochenfokus / Sonstige Infos für die gesamte Woche (optional)
+              </label>
+              <textarea id="account-plan-edit-coachnote" rows="2" class="form-textarea"
+                placeholder="z. B. Grundlagenwoche mit Fokus auf saubere Trittfrequenz und Erholung."></textarea>
+            </div>
+
+            <!-- Formular-Aktionen unten -->
+            <div class="account-form-actions" style="margin-top: 1.5rem;">
+              <button type="button" id="account-plan-cancel-btn" class="btn btn-secondary" style="width: auto;">
+                Abbrechen
+              </button>
+              <button type="button" id="account-plan-save-btn" class="btn btn-primary" style="width: auto;">
+                💾 Trainingsplan speichern &amp; übernehmen
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+      <!-- ════════════════════════════════════════════════════
+           REITER 3: KI-Assistenz (Google Gemini Generator & Feedback)
+      ════════════════════════════════════════════════════ -->
+      <section id="view-ai" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-ai">
 
         <!-- KI-Steuerungs-Panel & Analyse-Zeitraum -->
         <div class="card ai-config-card" style="margin-bottom: 1.5rem;">
           <div class="card-header">
             <div class="card-title">
               <span class="icon" aria-hidden="true">🤖</span>
-              <h3>KI-Trainingsplan-Generator (Google Gemini)</h3>
+              <h3>KI-Assistenz &amp; Trainingsplan-Generator (Google Gemini)</h3>
             </div>
             <span class="plan-meta text-muted">Intelligente Periodisierung</span>
           </div>
@@ -151,7 +249,7 @@
             <p class="ai-desc">
               Konfiguriere, wie weit deine Strava-Aktivitäten für die Analyse zurückreichen sollen.
               Gemini analysiert dein Trainingsvolumen, deine Belastungsspitzen und Erholungsphasen aus diesem Zeitraum
-              und passt deinen Wochenplan dynamisch daran an.
+              und schlägt dir einen neuen Wochenplan vor oder gibt dir detailliertes Coach-Feedback zu deinem aktuellen Plan.
             </p>
 
             <div class="ai-timeframe-toolbar">
@@ -182,10 +280,19 @@
                 <button type="button" id="ai-feedback-btn" class="btn btn-ai-feedback" aria-label="Trainingsplan von KI analysieren lassen und Feedback einholen">
                   🔍 Plan analysieren &amp; Feedback
                 </button>
-                <button type="button" id="ai-adjust-btn" class="btn btn-ai" aria-label="Trainingsplan von KI anpassen lassen">
-                  🤖 Plan von KI anpassen lassen
+                <button type="button" id="ai-adjust-btn" class="btn btn-ai" aria-label="Neuen Trainingsplan-Vorschlag von KI generieren lassen">
+                  🤖 Plan-Vorschlag generieren
                 </button>
               </div>
+            </div>
+
+            <!-- Zusätzliche Hinweise / Wünsche für die KI (Prompt-Ergänzung) -->
+            <div class="ai-custom-prompt-box" style="margin-top: 1rem;">
+              <label for="ai-user-prompt-input" class="ai-prompt-label">
+                💬 Zusätzliche Hinweise oder Wünsche für diese Anfrage (optional):
+              </label>
+              <textarea id="ai-user-prompt-input" rows="2" class="form-textarea ai-user-prompt-textarea"
+                placeholder="z. B. „Diese Woche bin ich Donnerstag & Freitag auf Geschäftsreise (nur Laufen möglich)“, „Bitte eine Regenerationswoche mit reduziertem Umfang planen“ oder „Mehr Fokus auf Kraul-Intervalle“..."></textarea>
             </div>
 
             <!-- Vorschau über gefilterte Aktivitäten -->
@@ -215,47 +322,49 @@
           </div>
         </div>
 
-        <!-- Wochentrainingsplan Card -->
-        <div class="card" aria-labelledby="plan-title">
-          <div class="card-header">
+        <!-- ── KI-Trainingsplan-Vorschlag Card (wird nach Generierung als Vorschlag angezeigt) ── -->
+        <div id="ai-proposal-card" class="card ai-proposal-card hidden" aria-labelledby="plan-title">
+          <div class="card-header ai-proposal-header">
             <div class="card-title">
-              <span class="icon" aria-hidden="true">📋</span>
-              <h3 id="plan-title">Wochentrainingsplan</h3>
+              <span class="icon" aria-hidden="true">✨</span>
+              <h3 id="plan-title">Neuer Trainingsplan-Vorschlag von Gemini</h3>
             </div>
-            <!-- Plan-Metadaten (KI-Datum etc.) -->
             <span id="plan-meta" class="plan-meta" aria-live="polite"></span>
+          </div>
+
+          <!-- Aktionsleiste zum Annehmen oder Ablehnen des Vorschlags -->
+          <div class="ai-proposal-decision-bar">
+            <div class="proposal-decision-info">
+              <strong>Möchtest du diesen KI-Vorschlag übernehmen?</strong>
+              <span>Bei Annahme wird dein aktueller Trainingsplan im Reiter <em>Trainingsplan</em> durch diesen Vorschlag überschrieben.</span>
+            </div>
+            <div class="proposal-decision-buttons">
+              <button type="button" id="ai-reject-proposal-btn" class="btn btn-secondary" style="width: auto;">
+                ✕ Vorschlag ablehnen
+              </button>
+              <button type="button" id="ai-accept-proposal-btn" class="btn btn-primary" style="width: auto;">
+                ✅ Vorschlag annehmen &amp; Trainingsplan überschreiben
+              </button>
+            </div>
           </div>
 
           <!-- Coach-Notiz (nach KI-Generierung) -->
           <div id="coach-note-box" class="hidden coach-note-banner">
-            <strong class="coach-title">💬 Coach-Empfehlung für diese Woche:</strong>
+            <strong class="coach-title">💬 Coach-Empfehlung für diesen Vorschlag:</strong>
             <span id="coach-note"></span>
           </div>
 
-          <!-- 7-Tage-Wochen-Grid (wird per JS befüllt) -->
-          <div id="week-plan-grid" class="week-grid" role="list" aria-label="Wochentrainingsplan" aria-live="polite">
-            <!-- Skeletons -->
-            <div class="day-card">
-              <div class="skeleton" style="height:120px;"></div>
-            </div>
-            <div class="day-card">
-              <div class="skeleton" style="height:120px;"></div>
-            </div>
-            <div class="day-card">
-              <div class="skeleton" style="height:120px;"></div>
-            </div>
-            <div class="day-card">
-              <div class="skeleton" style="height:120px;"></div>
-            </div>
-            <div class="day-card">
-              <div class="skeleton" style="height:120px;"></div>
-            </div>
-            <div class="day-card">
-              <div class="skeleton" style="height:120px;"></div>
-            </div>
-            <div class="day-card">
-              <div class="skeleton" style="height:120px;"></div>
-            </div>
+          <!-- 7-Tage-Wochen-Grid des Vorschlags (wird per JS befüllt) -->
+          <div id="week-plan-grid" class="week-grid" role="list" aria-label="Vorgeschlagener Wochentrainingsplan" aria-live="polite">
+          </div>
+        </div>
+
+        <!-- Platzhalter wenn noch kein Vorschlag oder Feedback offen ist -->
+        <div id="ai-empty-hint-card" class="card ai-empty-hint-card">
+          <div class="empty-plan-card">
+            <span>🤖</span>
+            <h3>KI-Coach bereit</h3>
+            <p>Wähle oben deinen gewünschten Analyse-Zeitraum und klicke auf <strong>„Plan-Vorschlag generieren“</strong>, um dir einen neuen Wochenplan-Entwurf erstellen zu lassen, oder auf <strong>„Plan analysieren &amp; Feedback“</strong>, um deinen bestehenden Trainingsplan auswerten zu lassen.</p>
           </div>
         </div>
 
@@ -345,100 +454,105 @@
                 <span class="input-hint">E-Mail ist fest mit deiner Firebase-Authentifizierung verknüpft.</span>
               </div>
 
+              <hr class="account-section-divider" />
+
+              <!-- ── Sektion 1: Körperdaten & Physiologie ── -->
+              <div class="account-section-header">
+                <h4>🧬 Körperdaten &amp; Herzfrequenz (für KI-Trainingszonen)</h4>
+                <p>Diese Kennwerte helfen der KI, deine individuellen Belastungszonen (GA1/GA2/EB), Watt/kg und deinen Kalorienbedarf präzise zu berechnen.</p>
+              </div>
+
+              <div class="account-metrics-grid">
+                <div class="form-group">
+                  <label for="account-age-input">🎂 Alter (Jahre)</label>
+                  <input type="number" id="account-age-input" min="14" max="100" step="1" placeholder="z. B. 32" />
+                </div>
+
+                <div class="form-group">
+                  <label for="account-height-input">📏 Körpergröße (cm)</label>
+                  <input type="number" id="account-height-input" min="120" max="230" step="1" placeholder="z. B. 182" />
+                </div>
+
+                <div class="form-group">
+                  <label for="account-weight-input">⚖️ Gewicht (kg)</label>
+                  <input type="number" id="account-weight-input" min="35" max="200" step="0.1" placeholder="z. B. 76.5" />
+                </div>
+
+                <div class="form-group">
+                  <label for="account-resting-hr-input">💤 Ruhepuls (bpm)</label>
+                  <input type="number" id="account-resting-hr-input" min="30" max="110" step="1" placeholder="z. B. 48" />
+                </div>
+
+                <div class="form-group">
+                  <label for="account-max-hr-input">❤️ Maximalpuls (bpm)</label>
+                  <input type="number" id="account-max-hr-input" min="120" max="230" step="1" placeholder="z. B. 192" />
+                </div>
+
+                <div class="form-group">
+                  <label for="account-ftp-input">⚡ Rad-FTP / Schwellenleistung (Watt)</label>
+                  <input type="number" id="account-ftp-input" min="50" max="600" step="1" placeholder="z. B. 265" />
+                </div>
+              </div>
+
+              <hr class="account-section-divider" />
+
+              <!-- ── Sektion 2: Leistungs-Benchmarks & Triathlon-Ziele ── -->
+              <div class="account-section-header">
+                <h4>🎯 Triathlon-Erfahrung, Pace-Benchmarks &amp; Wettkampfziel</h4>
+                <p>Optionale Angaben für ein noch präziseres Pacing und auf dich zugeschnittene Wochenumfänge der KI-Assistenz.</p>
+              </div>
+
+              <div class="account-metrics-grid">
+                <div class="form-group">
+                  <label for="account-experience-select">🏅 Erfahrungslevel</label>
+                  <select id="account-experience-select" class="form-select">
+                    <option value="">– Bitte wählen (optional) –</option>
+                    <option value="rookie">Einsteiger / Erster Triathlon</option>
+                    <option value="intermediate">Fortgeschritten (Olympisch / 70.3 Erfahrung)</option>
+                    <option value="experienced">Erfahrener Langdistanz-Athlet</option>
+                    <option value="ambitious">Performance / Altersklassen-Podium</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="account-weekly-hours-input">⏱️ Max. Zeitbudget pro Woche (Std.)</label>
+                  <input type="number" id="account-weekly-hours-input" min="2" max="35" step="0.5" placeholder="z. B. 12" />
+                </div>
+
+                <div class="form-group">
+                  <label for="account-swim-css-input">🏊 Schwimm-Schwelle / CSS (min/100m)</label>
+                  <input type="text" id="account-swim-css-input" placeholder="z. B. 1:45" />
+                </div>
+
+                <div class="form-group">
+                  <label for="account-run-pace-input">🏃 Lauf-Schwellenpace (min/km)</label>
+                  <input type="text" id="account-run-pace-input" placeholder="z. B. 4:35" />
+                </div>
+
+                <div class="form-group">
+                  <label for="account-race-date-input">📅 Wettkampfdatum (Hauptziel)</label>
+                  <input type="date" id="account-race-date-input" class="form-input-date" />
+                </div>
+
+                <div class="form-group">
+                  <label for="account-target-time-input">🏁 Zielzeit (z. B. Sub 10:30 h oder Finish)</label>
+                  <input type="text" id="account-target-time-input" placeholder="z. B. 10:45 h / Sicher ins Ziel" />
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-top: 0.75rem;">
+                <label for="account-injuries-input">🩹 Verletzungshistorie, Schwachstellen oder besondere Hinweise für den KI-Coach</label>
+                <textarea id="account-injuries-input" rows="2" class="form-textarea"
+                  placeholder="z. B. Empfindliche Achillessehne bei zu schnellen Steigerungen, Fokus auf Kraul-Wasserlage, unter der Woche max. 90 Min. pro Einheit möglich..."></textarea>
+                <span class="input-hint">Die KI berücksichtigt diese Hinweise automatisch bei der Erstellung neuer Plan-Vorschläge und im Plan-Feedback.</span>
+              </div>
+
               <div class="account-form-actions">
                 <button type="submit" id="account-save-btn" class="btn btn-primary" style="width: auto;">
-                  💾 Änderungen speichern
+                  💾 Profil &amp; Athletendaten speichern
                 </button>
               </div>
             </form>
-
-          </div>
-
-          <!-- ── Trainingsplan-Bereich auf der Konto-Seite ── -->
-          <div class="card account-plan-card" id="account-plan-card" style="margin-top: 1.5rem;">
-
-            <div class="card-header account-plan-header">
-              <div class="card-title">
-                <span class="icon" aria-hidden="true">📋</span>
-                <h3 id="account-plan-title">Mein aktueller Trainingsplan</h3>
-              </div>
-              <div class="account-plan-header-actions">
-                <span id="account-plan-status-badge" class="plan-meta text-muted" aria-live="polite">
-                  Lade Trainingsplan…
-                </span>
-                <button type="button" id="account-plan-toggle-mode-btn" class="btn btn-secondary btn-sm" style="width: auto;">
-                  <span class="btn-icon">✏️</span> <span id="account-plan-toggle-text">Plan bearbeiten</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Modus 1: Anzeige-Ansicht (Standard) -->
-            <div id="account-plan-view-container">
-              <!-- Coach-Notiz / Wochenfokus -->
-              <div id="account-plan-coach-note-box" class="coach-note-banner hidden" style="margin-bottom: 1.25rem;">
-                <strong class="coach-title">💬 Notiz &amp; Wochenfokus:</strong>
-                <span id="account-plan-coach-note-text"></span>
-              </div>
-
-              <!-- 7-Tage-Übersicht -->
-              <div id="account-plan-days-grid" class="account-plan-grid" role="list" aria-label="Wochentrainingsplan Übersicht">
-                <div class="empty-plan-placeholder">
-                  <div class="spinner"></div>
-                  <span>Lade aktuellen Trainingsplan…</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Modus 2: Manueller Editor (Initial ausgeblendet) -->
-            <div id="account-plan-edit-container" class="hidden">
-              <div class="account-plan-editor-toolbar">
-                <div class="editor-template-actions">
-                  <span class="editor-toolbar-label">Schnell-Vorlagen:</span>
-                  <button type="button" id="btn-template-ironman" class="btn btn-secondary btn-sm" title="Ausgewogene Ironman-Trainingswoche laden">
-                    ⚡ Ironman-Vorlage
-                  </button>
-                  <button type="button" id="btn-template-reset" class="btn btn-secondary btn-sm" title="Alle Tage auf Ruhetag setzen">
-                    🧹 Alle Ruhetag
-                  </button>
-                </div>
-                <div class="editor-actions-top">
-                  <button type="button" id="account-plan-cancel-btn-top" class="btn btn-secondary btn-sm">
-                    Abbrechen
-                  </button>
-                  <button type="button" id="account-plan-save-btn-top" class="btn btn-primary btn-sm">
-                    💾 Speichern
-                  </button>
-                </div>
-              </div>
-
-              <p class="editor-helper-text">
-                Wähle für jeden Wochentag eine oder mehrere Disziplinen (z. B. <em>Rad + Laufen</em> für Koppeltraining). Der <strong>Ruhetag</strong> deaktiviert automatisch die Sportarten. Für jede gewählte Disziplin lassen sich die Trainingsarten frei wählen und deren Parameter (Dauer, Distanz, Tempo, Intensität) individuell festlegen.
-              </p>
-
-              <!-- 7 Tage Eingabemasken (Montag - Sonntag) -->
-              <div id="account-plan-editor-days" class="account-plan-editor-list">
-                <!-- Dynamisch via account.js befüllt -->
-              </div>
-
-              <!-- Allgemeiner Wochenfokus / Notiz -->
-              <div class="form-group" style="margin-top: 1.5rem;">
-                <label for="account-plan-edit-coachnote">
-                  💬 Wochenfokus / Sonstige Infos für die gesamte Woche (optional)
-                </label>
-                <textarea id="account-plan-edit-coachnote" rows="2" class="form-textarea"
-                  placeholder="z. B. Grundlagenwoche mit Fokus auf saubere Trittfrequenz und Erholung."></textarea>
-              </div>
-
-              <!-- Formular-Aktionen unten -->
-              <div class="account-form-actions" style="margin-top: 1.5rem;">
-                <button type="button" id="account-plan-cancel-btn" class="btn btn-secondary" style="width: auto;">
-                  Abbrechen
-                </button>
-                <button type="button" id="account-plan-save-btn" class="btn btn-primary" style="width: auto;">
-                  💾 Trainingsplan speichern &amp; übernehmen
-                </button>
-              </div>
-            </div>
 
           </div>
         </section>

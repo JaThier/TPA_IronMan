@@ -76,6 +76,7 @@ async function getBestAvailableModel(apiKey) {
 // ── Zustand ────────────────────────────────────────────────
 let currentUser         = null;
 let currentPlan         = null;
+let proposedPlan        = null;
 let aiTimeframeDays     = 30; // Standard: 30 Tage
 
 // ── Wochentage ─────────────────────────────────────────────
@@ -92,33 +93,42 @@ export async function initTrainingPlan(user) {
   document.getElementById("ai-feedback-btn")?.addEventListener("click", analyzePlanWithAI);
   document.getElementById("ai-feedback-close-btn")?.addEventListener("click", () => {
     document.getElementById("ai-feedback-card")?.classList.add("hidden");
+    updateEmptyHintVisibility();
   });
+  document.getElementById("ai-accept-proposal-btn")?.addEventListener("click", acceptProposedPlan);
+  document.getElementById("ai-reject-proposal-btn")?.addEventListener("click", rejectProposedPlan);
 
-  // Synchronisation bei externen Updates (z. B. durch manuelles Bearbeiten im Konto-Tab)
+  // Synchronisation bei externen Updates (z. B. durch manuelles Bearbeiten im Trainingsplan-Tab)
   window.addEventListener("planUpdated", (e) => {
     if (e.detail) {
       currentPlan = e.detail;
-      renderTrainingPlan(currentPlan);
     }
   });
-
-  renderPlanSkeleton();
 
   try {
     const plan = await loadCurrentPlan();
     if (plan) {
       currentPlan = plan;
-      renderTrainingPlan(plan);
-    } else {
-      renderEmptyPlan();
     }
   } catch (err) {
-    console.error("[gemini] Fehler beim Initialisieren des Trainingsplans:", err);
-    renderEmptyPlan();
+    console.error("[gemini] Fehler beim Laden des bestehenden Trainingsplans:", err);
   }
+
+  updateEmptyHintVisibility();
 
   // Vorschau-Zähler für Aktivitäten aktualisieren
   await updateActivityCountPreview();
+}
+
+function updateEmptyHintVisibility() {
+  const hintCard = document.getElementById("ai-empty-hint-card");
+  const proposalCard = document.getElementById("ai-proposal-card");
+  const feedbackCard = document.getElementById("ai-feedback-card");
+  if (!hintCard) return;
+
+  const hasProposal = proposalCard && !proposalCard.classList.contains("hidden");
+  const hasFeedback = feedbackCard && !feedbackCard.classList.contains("hidden");
+  hintCard.classList.toggle("hidden", Boolean(hasProposal || hasFeedback));
 }
 
 /** Richtet die Listener für den konfigurierbaren Analyse-Zeitraum ein */
@@ -251,7 +261,73 @@ async function loadCachedActivities() {
   }
 }
 
-// ── KI-Plan generieren ─────────────────────────────────────
+async function loadAthleteProfileMetrics() {
+  if (window.athleteProfileMetrics && Object.keys(window.athleteProfileMetrics).length > 0) {
+    return window.athleteProfileMetrics;
+  }
+  const user = currentUser || auth?.currentUser;
+  if (!user?.uid) return {};
+  try {
+    const profileRef = doc(db, "users", user.uid, "profile", "main");
+    const snap = await getDoc(profileRef);
+    if (snap.exists()) {
+      const metrics = snap.data()?.athleteMetrics || {};
+      window.athleteProfileMetrics = metrics;
+      return metrics;
+    }
+  } catch (err) {
+    console.warn("[gemini] Konnte Athleten-Metriken nicht laden:", err);
+  }
+  return {};
+}
+
+function formatAthleteProfileForPrompt(metrics) {
+  if (!metrics || typeof metrics !== "object") {
+    return "Keine spezifischen Körper- oder Leistungsdaten im Profil hinterlegt.";
+  }
+  const lines = [];
+  if (metrics.age) lines.push(`- Alter: ${metrics.age} Jahre`);
+  if (metrics.heightCm) lines.push(`- Körpergröße: ${metrics.heightCm} cm`);
+  if (metrics.weightKg) lines.push(`- Gewicht: ${metrics.weightKg} kg`);
+  if (metrics.restingHr) lines.push(`- Ruhepuls: ${metrics.restingHr} bpm`);
+  if (metrics.maxHr) lines.push(`- Maximalpuls (HFmax): ${metrics.maxHr} bpm`);
+  if (metrics.ftpWatts) {
+    const wpk = metrics.weightKg ? ` (${(metrics.ftpWatts / metrics.weightKg).toFixed(2)} W/kg)` : "";
+    lines.push(`- Rad-FTP (Schwellenleistung): ${metrics.ftpWatts} W${wpk}`);
+  }
+  if (metrics.swimCssPace) lines.push(`- Schwimm-Schwelle (CSS): ${metrics.swimCssPace} min/100m`);
+  if (metrics.runThresholdPace) lines.push(`- Lauf-Schwellenpace: ${metrics.runThresholdPace} min/km`);
+
+  const expLabels = {
+    rookie: "Einsteiger / Erster Triathlon",
+    intermediate: "Fortgeschritten (Olympisch / 70.3 Erfahrung)",
+    experienced: "Erfahrener Langdistanz-Athlet",
+    ambitious: "Performance / Altersklassen-Podium",
+  };
+  if (metrics.experienceLevel) {
+    lines.push(`- Erfahrungslevel: ${expLabels[metrics.experienceLevel] || metrics.experienceLevel}`);
+  }
+  if (metrics.maxWeeklyHours) {
+    lines.push(`- Maximales Zeitbudget pro Woche: ${metrics.maxWeeklyHours} Stunden (WICHTIG: Gesamtdauer des Wochenplans darf dieses Budget nicht überschreiten!)`);
+  }
+  if (metrics.raceDate) {
+    const raceTime = new Date(metrics.raceDate).getTime();
+    const weeksLeft = !isNaN(raceTime) ? Math.max(0, Math.round((raceTime - Date.now()) / (7 * 24 * 3600 * 1000))) : null;
+    lines.push(`- Hauptwettkampf-Datum: ${metrics.raceDate}${weeksLeft !== null ? ` (noch ca. ${weeksLeft} Wochen bis zum Wettkampf)` : ""}`);
+  }
+  if (metrics.targetTime) {
+    lines.push(`- Persönliches Wettkampf-Ziel: ${metrics.targetTime}`);
+  }
+  if (metrics.injuriesOrNotes) {
+    lines.push(`- Verletzungshistorie / Einschränkungen / Besondere Hinweise: ${metrics.injuriesOrNotes}`);
+  }
+
+  return lines.length > 0
+    ? lines.join("\n")
+    : "Keine spezifischen Körper- oder Leistungsdaten im Profil hinterlegt.";
+}
+
+// ── KI-Plan-Vorschlag generieren ──────────────────────────
 async function adjustPlanWithAI() {
   let geminiApiKey;
   try {
@@ -269,6 +345,11 @@ async function adjustPlanWithAI() {
   showAiStatus(`🤖 Analysiere deine Einheiten der letzten ${aiTimeframeDays} Tage…`);
 
   try {
+    // Sicherstellen, dass wir den aktuellsten Plan (für Lock-Status etc.) geladen haben
+    if (!currentPlan) {
+      currentPlan = await loadCurrentPlan();
+    }
+
     // 1. Aktivitäten laden und nach gewähltem Zeitraum filtern
     const allActs = await loadCachedActivities();
     const cutoff = Date.now() - (aiTimeframeDays * 24 * 3600 * 1000);
@@ -278,37 +359,96 @@ async function adjustPlanWithAI() {
       return !isNaN(d) && d >= cutoff;
     });
 
-    // 2. Prompt bauen mit den gefilterten Aktivitäten
-    const prompt = buildPrompt(currentPlan, filteredActs, aiTimeframeDays);
+    // 2. Athleten-Profil, benutzerdefinierte Hinweise & gefilterte Aktivitäten in den Prompt einbinden
+    const athleteMetrics = await loadAthleteProfileMetrics();
+    const customUserPrompt = document.getElementById("ai-user-prompt-input")?.value?.trim() || "";
+    const prompt = buildPrompt(currentPlan, filteredActs, aiTimeframeDays, athleteMetrics, customUserPrompt);
 
     // 3. Gemini API aufrufen
-    showAiStatus("🧠 Gemini erstellt deinen personalisierten Trainingsplan…");
+    showAiStatus("🧠 Gemini erstellt deinen personalisierten Trainingsplan-Vorschlag…");
     const newPlanJSON = await callGeminiAPI(prompt, geminiApiKey);
 
     // 4. Plan parsen und validieren
     const newPlan = parsePlanResponse(newPlanJSON);
     if (!newPlan) throw new Error("Ungültige Plan-Struktur von Gemini");
 
-    // 5. Plan in Firestore speichern
-    showAiStatus("💾 Speichere neuen Plan in Firestore…");
-    const savedPlan = await savePlan({
+    // 5. Als Vorschlag im Tab "KI-Assistenz" anzeigen (noch NICHT speichern!)
+    proposedPlan = {
       ...newPlan,
       analyzedTimeframeDays: aiTimeframeDays,
       analyzedActivitiesCount: filteredActs.length,
-    });
+      createdAt: new Date().toISOString(),
+      aiGenerated: true,
+    };
 
-    currentPlan = savedPlan;
-    renderTrainingPlan(savedPlan);
+    renderTrainingPlan(proposedPlan);
+
+    const proposalCard = document.getElementById("ai-proposal-card");
+    if (proposalCard) {
+      proposalCard.classList.remove("hidden");
+      updateEmptyHintVisibility();
+      proposalCard.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
     hideAiStatus();
-    showToast(`✅ Trainingsplan erfolgreich angepasst (${filteredActs.length} Einheiten analysiert)!`, "success");
+    showToast(`✨ Neuer Trainingsplan-Vorschlag erstellt! Du kannst ihn jetzt prüfen und annehmen oder ablehnen.`, "success");
 
   } catch (err) {
     console.error("Gemini Fehler:", err);
     hideAiStatus();
-    showToast(`KI-Anpassung fehlgeschlagen: ${err.message}`, "error");
+    showToast(`KI-Vorschlag fehlgeschlagen: ${err.message}`, "error");
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+/**
+ * Nimmt den generierten KI-Vorschlag an, überschreibt damit den aktuellen Trainingsplan in Firestore
+ * und synchronisiert den Trainingsplan-Tab.
+ */
+async function acceptProposedPlan() {
+  if (!proposedPlan) return;
+
+  const acceptBtn = document.getElementById("ai-accept-proposal-btn");
+  const rejectBtn = document.getElementById("ai-reject-proposal-btn");
+  if (acceptBtn) {
+    acceptBtn.disabled = true;
+    acceptBtn.textContent = "💾 Übernehme Trainingsplan…";
+  }
+  if (rejectBtn) rejectBtn.disabled = true;
+
+  try {
+    const savedPlan = await savePlan(proposedPlan);
+    currentPlan = savedPlan;
+    proposedPlan = null;
+
+    document.getElementById("ai-proposal-card")?.classList.add("hidden");
+    updateEmptyHintVisibility();
+
+    showToast("✅ KI-Vorschlag angenommen! Dein Trainingsplan wurde aktualisiert.", "success");
+
+    // Direkt zum Trainingsplan-Tab wechseln, damit der Nutzer seinen neuen Plan sieht
+    window.location.hash = "plan";
+  } catch (err) {
+    console.error("[gemini] Fehler beim Übernehmen des Vorschlags:", err);
+    showToast(`Fehler beim Speichern des Plans: ${err.message}`, "error");
+  } finally {
+    if (acceptBtn) {
+      acceptBtn.disabled = false;
+      acceptBtn.textContent = "✅ Vorschlag annehmen & Trainingsplan überschreiben";
+    }
+    if (rejectBtn) rejectBtn.disabled = false;
+  }
+}
+
+/**
+ * Lehnt den generierten KI-Vorschlag ab und verwirft ihn, ohne den bestehenden Plan zu verändern.
+ */
+function rejectProposedPlan() {
+  proposedPlan = null;
+  document.getElementById("ai-proposal-card")?.classList.add("hidden");
+  updateEmptyHintVisibility();
+  showToast("KI-Vorschlag abgelehnt. Dein bestehender Trainingsplan bleibt unverändert.", "info");
 }
 
 // ── KI-Plan Feedback & Analyse ────────────────────────────
@@ -343,8 +483,10 @@ async function analyzePlanWithAI() {
       return !isNaN(d) && d >= cutoff;
     });
 
-    // 2. Prompt für Feedback bauen
-    const prompt = buildFeedbackPrompt(currentPlan, filteredActs, aiTimeframeDays);
+    // 2. Prompt für Feedback bauen (inkl. Athleten-Profil & benutzerdefinierter Hinweise)
+    const athleteMetrics = await loadAthleteProfileMetrics();
+    const customUserPrompt = document.getElementById("ai-user-prompt-input")?.value?.trim() || "";
+    const prompt = buildFeedbackPrompt(currentPlan, filteredActs, aiTimeframeDays, athleteMetrics, customUserPrompt);
 
     // 3. Gemini API aufrufen
     showAiStatus("🧠 Gemini Headcoach wertet deinen Plan aus und formuliert Feedback…");
@@ -361,6 +503,7 @@ async function analyzePlanWithAI() {
     const card = document.getElementById("ai-feedback-card");
     if (card) {
       card.classList.remove("hidden");
+      updateEmptyHintVisibility();
       card.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
@@ -394,9 +537,12 @@ function formatPlanForFeedbackPrompt(plan) {
     let typeStr = (day.type || "Aktivität").toUpperCase();
     if (Array.isArray(day.disciplines) && day.disciplines.length > 1) {
       const discNames = day.disciplines.map(d => ({
-        ride: "Rad", run: "Laufen", swim: "Schwimmen"
+        ride: "Rad", run: "Laufen", swim: "Schwimmen", mobility: "Mobility & Stretching", rest: "Ruhetag"
       }[d] || d)).join(" + ");
-      typeStr = `KOPPELTRAINING (${discNames})`;
+      const sportCount = day.disciplines.filter(d => d !== "rest" && d !== "mobility").length;
+      typeStr = sportCount > 1 ? `KOPPELTRAINING (${discNames})` : discNames.toUpperCase();
+    } else if (Array.isArray(day.disciplines) && day.disciplines.length === 1 && day.disciplines[0] === "mobility") {
+      typeStr = "MOBILITY & STRETCHING";
     }
 
     const metaParts = [];
@@ -417,7 +563,7 @@ function formatPlanForFeedbackPrompt(plan) {
 
     if (Array.isArray(day.parts) && day.parts.length > 0) {
       const partsDetail = day.parts.map(p => {
-        const discPrefix = p.discId ? `[${{ride:"Rad", run:"Laufen", swim:"Schwimmen", rest:"Ruhe"}[p.discId] || p.discId}] ` : "";
+        const discPrefix = p.discId ? `[${{ride:"Rad", run:"Laufen", swim:"Schwimmen", mobility:"Mobility & Stretching", rest:"Ruhe"}[p.discId] || p.discId}] ` : "";
         return `    - ${discPrefix}"${p.label || p.type}": ${p.duration || 0} Min${p.distance ? `, ${p.distance} km` : ""}${p.speed ? `, Pace/Tempo ${p.speed}` : ""}${p.intensity ? `, Intensität ${p.intensity}` : ""}`;
       }).join("\n");
       text += `\n  Einheiten / Abschnitte:\n${partsDetail}`;
@@ -484,18 +630,27 @@ Auszug jüngster Einheiten:
 ${listExcerpt}`;
 }
 
-function buildFeedbackPrompt(currentPlan, activities, timeframeDays) {
+function buildFeedbackPrompt(currentPlan, activities, timeframeDays, athleteMetrics = {}, customUserPrompt = "") {
   const planSummary = formatPlanForFeedbackPrompt(currentPlan);
   const actsSummary = formatActivitiesForFeedbackPrompt(activities, timeframeDays);
+  const profileSummary = formatAthleteProfileForPrompt(athleteMetrics);
+
+  const userPromptSection = customUserPrompt
+    ? `\n## 💬 Spezifische Hinweise / Fragen des Athleten für diese Analyse (UNBEDINGT BEACHTEN!)
+"${customUserPrompt}"\n`
+    : "";
 
   return `Du bist ein hochqualifizierter Triathlon-Headcoach (Spezialisierung Langdistanz / Ironman).
-Der Athlet möchte eine professionelle Analyse und konstruktives Feedback zu seinem AKTUELLES WOCHENTRAININGPLAN, basierend auf seinen tatsächlich absolvierten Einheiten der vergangenen ${timeframeDays} Tage.
+Der Athlet möchte eine professionelle Analyse und konstruktives Feedback zu seinem AKTUELLES WOCHENTRAININGPLAN, basierend auf seinen persönlichen Profil-/Körperdaten und seinen tatsächlich absolvierten Einheiten der vergangenen ${timeframeDays} Tage.
 
 WICHTIGER HINWEIS: Du sollst den Trainingsplan NICHT überschreiben und keinen neuen Plan generieren, sondern den bestehenden Plan fundiert bewerten und Feedback geben!
 
 ## Ziel
 Ironman-Vorbereitung (3,8 km Schwimmen, 180 km Radfahren, 42,2 km Laufen).
 
+## Persönliches Athleten-Profil & Physiologie
+${profileSummary}
+${userPromptSection}
 ## Trainingshistorie des Athleten (letzte ${timeframeDays} Tage)
 ${actsSummary}
 
@@ -699,12 +854,19 @@ function renderPlanFeedback(feedback, timeframeDays, activitiesCount) {
 }
 
 // ── Prompt-Builder ─────────────────────────────────────────
-function buildPrompt(currentPlan, activities, timeframeDays) {
+function buildPrompt(currentPlan, activities, timeframeDays, athleteMetrics = {}, customUserPrompt = "") {
   const cutoffDate = new Date(Date.now() - (timeframeDays * 24 * 3600 * 1000));
   const dateStr = cutoffDate.toLocaleDateString("de-DE");
 
   const actsSummary = formatActivitiesForFeedbackPrompt(activities, timeframeDays);
   const currentPlanStr = formatPlanForFeedbackPrompt(currentPlan);
+  const profileSummary = formatAthleteProfileForPrompt(athleteMetrics);
+
+  const userPromptSection = customUserPrompt
+    ? `\n## 💬 ZUSÄTZLICHE WÜNSCHE & HINWEISE DES ATHLETEN FÜR DIESE WOCHE (SEHR WICHTIG!)
+Der Athlet hat folgenden direkten Hinweis für die Erstellung dieses Trainingsplans eingegeben. Setze diese Vorgaben (sofern sie nicht den mit 🔒 fixierten Tagen widersprechen) zwingend im neuen Wochenplan um und gehe in der \`coachNote\` kurz darauf ein:
+"${customUserPrompt}"\n`
+    : "";
 
   // Fixierte Tage erfassen
   const lockedDaysList = [];
@@ -713,7 +875,7 @@ function buildPrompt(currentPlan, activities, timeframeDays) {
       if (dObj?.locked) {
         const dLabel = WEEKDAY_DE[dKey] || dKey;
         const discs = Array.isArray(dObj.disciplines) && dObj.disciplines.length > 0
-          ? dObj.disciplines.map(d => ({ ride: "Rad", run: "Laufen", swim: "Schwimmen", rest: "Ruhetag" }[d] || d)).join(" + ")
+          ? dObj.disciplines.map(d => ({ ride: "Rad", run: "Laufen", swim: "Schwimmen", mobility: "Mobility & Stretching", rest: "Ruhetag" }[d] || d)).join(" + ")
           : (dObj.type || "Ruhetag");
         const rawDiscs = Array.isArray(dObj.disciplines) && dObj.disciplines.length > 0
           ? dObj.disciplines
@@ -732,7 +894,10 @@ ${lockedDaysList.join("\n")}\n`
     : "";
 
   return `Du bist ein hochqualifizierter Triathlon-Headcoach (Ironman-Spezialist für Langdistanz: 3,8 km Schwimmen, 180 km Radfahren, 42,2 km Laufen).
-Analysiere die Trainingshistorie des Athleten aus den letzten ${timeframeDays} Tagen und erstelle einen neuen, detailgenauen und perfekt abgestimmten Wochenplan für die kommende Woche.
+Analysiere die persönlichen Körper- und Leistungsdaten sowie die Trainingshistorie des Athleten aus den letzten ${timeframeDays} Tagen und erstelle einen neuen, detailgenauen und perfekt abgestimmten Wochenplan für die kommende Woche.
+
+## Persönliches Athleten-Profil & Physiologie (für Pace, Watt, Puls-Zonen & Umfang beachten!)
+${profileSummary}
 
 ## Trainings-Historie (letzte ${timeframeDays} Tage, seit ${dateStr})
 Anzahl analysierter Einheiten: ${activities.length}
@@ -740,7 +905,7 @@ ${actsSummary}
 
 ## Bisheriger Trainingsplan
 ${currentPlanStr}
-${lockedSection}
+${lockedSection}${userPromptSection}
 ## Trainingsphilosophie für den Ironman
 1. **Belastungssteuerung & Erholung**: Mindestens 1 echter Ruhetag pro Woche (z. B. Montag). Ruhetage dienen der Superkompensation.
 2. **Triathlon-Spezifik**: Am Wochenende ist mindestens 1 Koppeleinheit (Brick: Radfahren gefolgt von einem Koppellauf) oder ein langer Lauf (Longrun) einzuplanen.
@@ -750,29 +915,31 @@ ${lockedSection}
 Das Dashboard nutzt ein neues, detailliertes Mehr-Disziplinen- und Abschnittsmodell. Jeder Wochentag (monday bis sunday) MUSS exakt nach diesen Regeln strukturiert sein:
 
 1. **Disziplinen (\`disciplines\`)**:
-   - Array der gewählten Disziplinen. Erlaubte IDs: \`"swim"\`, \`"ride"\`, \`"run"\`, \`"rest"\`.
-   - **KOPPELTRAINING (Brick)**: "Koppel" ist KEINE eigene Disziplin! Eine Koppeleinheit wird erzeugt, indem MEHRERE Disziplinen gewählt werden (z. B. \`["ride", "run"]\` oder \`["swim", "ride"]\`).
-   - **RUHETAG**: Hat AUSSCHLIESSLICH \`["rest"]\` als Disziplin. Ruhetag darf NIEMALS mit einer Sport-Disziplin kombiniert werden!
+   - Array der gewählten Disziplinen. Erlaubte IDs: \`"swim"\`, \`"ride"\`, \`"run"\`, \`"mobility"\`, \`"rest"\`.
+   - **KOPPELTRAINING (Brick)**: "Koppel" ist KEINE eigene Disziplin! Eine Koppeleinheit wird erzeugt, indem MEHRERE Sport-Disziplinen gewählt werden (z. B. \`["ride", "run"]\` oder \`["swim", "ride"]\`).
+   - **MOBILITY & STRETCHING (\`"mobility"\`)**: Ist eine eigenständige Disziplin und KEINE Unterart von Ruhetag! Sie kann JEDEM Tag hinzugefügt werden – sowohl einem Ruhetag (z. B. \`["rest", "mobility"]\`) als auch einem regulären Trainingstag (z. B. \`["run", "mobility"]\`). Für \`"mobility"\` wird nur die Zeit (\`duration\` in Minuten) eingestellt (keine Unterarten, \`distance: null\`, \`speed: ""\`).
+   - **RUHETAG (\`"rest"\`)**: Darf NIEMALS mit \`"swim"\`, \`"ride"\` oder \`"run"\` kombiniert werden, kann aber sehr gerne mit \`"mobility"\` kombiniert werden (\`["rest", "mobility"]\`).
 
 2. **Trainingsarten je Disziplin (\`subtypesByDisc\` & \`subtypes\`)**:
    - Für jede gewählte Disziplin in \`disciplines\` werden eine oder mehrere spezifische Arten gewählt:
      - \`swim\`: \`"technik"\` (Technik), \`"distance"\` (Distance), \`"intervalle"\` (Intervalle)
      - \`ride\`: \`"intervalle"\` (Intervalle), \`"endurance"\` (Endurance), \`"schwelle"\` (Schwelle)
      - \`run\`: \`"longrun"\` (Longrun), \`"intervalle"\` (Intervalle), \`"zone2"\` (Zone 2)
-     - \`rest\`: \`"ruhe"\` (Komplette Erholung), \`"mobility"\` (Stretching & Mobilität), \`"walk"\` (Spaziergang / Regenerativ)
-   - \`subtypesByDisc\`: Ein Objekt mit Subtype-Arrays je Disziplin, z. B. \`{ "ride": ["endurance"], "run": ["zone2"] }\`.
+     - \`mobility\`: Hat KEINE Unterarten (\`subtypesByDisc.mobility: []\`).
+     - \`rest\`: \`"ruhe"\` (Komplette Erholung)
+   - \`subtypesByDisc\`: Ein Objekt mit Subtype-Arrays je Disziplin, z. B. \`{ "ride": ["endurance"], "run": ["zone2"] }\` oder \`{ "rest": ["ruhe"], "mobility": [] }\`.
    - \`subtypes\`: Flat-Array aller gewählten Subtypes, z. B. \`["endurance", "zone2"]\`.
 
 3. **Abschnitte & Parameter (\`parts\`)**:
-   - Das Array \`parts\` enthält genau ein Objekt für JEDE gewählte Art JEDER Disziplin.
+   - Das Array \`parts\` enthält genau ein Objekt für JEDE gewählte Art JEDER Disziplin (für \`"mobility"\` genau ein Objekt mit \`"discId": "mobility"\`, \`"id": "default"\`).
    - Jedes Teil-Objekt besitzt:
-     - \`discId\`: Disziplin-ID (\`"swim"\`, \`"ride"\`, \`"run"\`, \`"rest"\`)
-     - \`id\`: Art-ID (z. B. \`"endurance"\`, \`"zone2"\`, \`"ruhe"\`)
-     - \`label\`: Bezeichnung mit Disziplin-Präfix (z. B. \`"Rad: Endurance"\`, \`"Laufen: Zone 2"\`)
+     - \`discId\`: Disziplin-ID (\`"swim"\`, \`"ride"\`, \`"run"\`, \`"mobility"\`, \`"rest"\`)
+     - \`id\`: Art-ID (z. B. \`"endurance"\`, \`"zone2"\`, \`"ruhe"\`, oder \`"default"\` bei \`"mobility"\`)
+     - \`label\`: Bezeichnung mit Disziplin-Präfix (z. B. \`"Rad: Endurance"\`, \`"Laufen: Zone 2"\`, \`"Stretching & Mobilität"\`)
      - \`icon\`: Passendes Emoji (z. B. 🔋, 💚, ⚡, 🔥, 🎯, 🌊, 🏃‍♂️, 🛏️, 🧘)
-     - \`duration\`: Dauer in Minuten (ganze Zahl, 0 bei Ruhetag)
-     - \`distance\`: Distanz in Kilometern als Zahl (z. B. 60 oder 1.8; bei reinem Ruhetag null)
-     - \`speed\`: Tempo-/Pace-/Leistungsangabe (z. B. \`"32 km/h / 230 W"\`, \`"5:15 min/km"\`, \`"1:45 min/100m"\` oder \`""\` bei Ruhetag)
+     - \`duration\`: Dauer in Minuten (ganze Zahl, 0 bei Ruhetag, z. B. 20 bei Mobility)
+     - \`distance\`: Distanz in Kilometern als Zahl (z. B. 60 oder 1.8; bei Ruhetag und Mobility null)
+     - \`speed\`: Tempo-/Pace-/Leistungsangabe (z. B. \`"32 km/h / 230 W"\`, \`"5:15 min/km"\`, \`"1:45 min/100m"\` oder \`""\` bei Ruhetag und Mobility)
      - \`intensity\`: Intensität (\`"easy"\`, \`"moderate"\` oder \`"hard"\`)
 
 4. **Tages-Gesamtwerte**:
@@ -789,18 +956,18 @@ Antworte AUSSCHLIESSLICH mit einem validen JSON-Objekt ohne Markdown-Codeblöcke
   "coachNote": "Persönliche Analyse und Begründung des Headcoaches für die Schwerpunktsetzung dieser Woche (2-3 Sätze).",
   "weekPlan": {
     "monday": {
-      "disciplines": ["rest"],
-      "subtypes": ["ruhe", "mobility"],
-      "subtypesByDisc": { "rest": ["ruhe", "mobility"] },
+      "disciplines": ["rest", "mobility"],
+      "subtypes": ["ruhe"],
+      "subtypesByDisc": { "rest": ["ruhe"], "mobility": [] },
       "parts": [
         { "discId": "rest", "id": "ruhe", "label": "Ruhetag: Komplette Erholung", "icon": "🛏️", "duration": 0, "distance": null, "speed": "", "intensity": "easy" },
-        { "discId": "rest", "id": "mobility", "label": "Ruhetag: Stretching & Mobilität", "icon": "🧘", "duration": 20, "distance": null, "speed": "", "intensity": "easy" }
+        { "discId": "mobility", "id": "default", "label": "Stretching & Mobilität", "icon": "🧘", "duration": 20, "distance": null, "speed": "", "intensity": "easy" }
       ],
       "duration": 20,
       "distance": null,
       "speed": "",
       "intensity": "easy",
-      "description": "Ruhetag & Mobilität",
+      "description": "Ruhetag + Mobility & Stretching",
       "notes": "Aktive Erholung, Faszienrolle und Dehnen für Beine und Hüfte."
     },
     "tuesday": {
@@ -995,9 +1162,15 @@ const AI_PLAN_CATALOG = {
     label: "Ruhetag",
     icon: "😴",
     subtypes: {
-      ruhe:     { label: "Ruhetag: Komplette Erholung", icon: "🛏️", defInt: "easy", defSpeed: "" },
-      mobility: { label: "Ruhetag: Stretching & Mobilität", icon: "🧘", defInt: "easy", defSpeed: "" },
-      walk:     { label: "Ruhetag: Spaziergang / Regenerativ", icon: "🚶", defInt: "easy", defSpeed: "" }
+      ruhe: { label: "Ruhetag: Komplette Erholung", icon: "🛏️", defInt: "easy", defSpeed: "" }
+    }
+  },
+  mobility: {
+    label: "Mobility & Stretching",
+    icon: "🧘",
+    onlyDuration: true,
+    subtypes: {
+      default: { label: "Stretching & Mobilität", icon: "🧘", defInt: "easy", defSpeed: "" }
     }
   },
   swim: {
@@ -1066,13 +1239,20 @@ function normalizePlanFromAI(rawPlan) {
       disciplines = ["rest"];
     }
 
-    // Ruhetags-Regel: Ruhetag schließt alle Sportarten aus
-    if (disciplines.includes("rest")) {
-      if (disciplines.length > 1) {
-        disciplines = disciplines.filter(d => d !== "rest");
-      } else {
-        disciplines = ["rest"];
-      }
+    // Legacy-Migration: Falls KI oder bestehender Plan "mobility" noch als Subtype von "rest" übergeben hat
+    const hasLegacyMobility =
+      (Array.isArray(rawDay.subtypes) && (rawDay.subtypes.includes("mobility") || rawDay.subtypes.includes("blackroll"))) ||
+      (rawDay.subtypesByDisc?.rest && (rawDay.subtypesByDisc.rest.includes("mobility") || rawDay.subtypesByDisc.rest.includes("blackroll"))) ||
+      (Array.isArray(rawDay.parts) && rawDay.parts.some(p => p && (p.discId === "mobility" || p.id === "mobility" || p.id === "blackroll")));
+
+    if (hasLegacyMobility && !disciplines.includes("mobility") && (!isLocked || existingDay?.disciplines?.includes("mobility"))) {
+      disciplines.push("mobility");
+    }
+
+    // Ruhetags-Regel: Ruhetag schließt Sportarten (swim, ride, run) aus, darf aber mit "mobility" kombiniert werden
+    const hasMainSport = disciplines.some(d => d !== "rest" && d !== "mobility");
+    if (disciplines.includes("rest") && hasMainSport) {
+      disciplines = disciplines.filter(d => d !== "rest");
     }
     if (disciplines.length === 0) disciplines = ["rest"];
 
@@ -1087,6 +1267,9 @@ function normalizePlanFromAI(rawPlan) {
       for (const p of rawDay.parts) {
         if (!p) continue;
         let discId = p.discId;
+        if (p.id === "mobility" || p.id === "blackroll" || discId === "mobility") {
+          discId = "mobility";
+        }
         if (!discId || !AI_PLAN_CATALOG[discId]) {
           for (const d of disciplines) {
             if (AI_PLAN_CATALOG[d]?.subtypes[p.id]) { discId = d; break; }
@@ -1097,6 +1280,23 @@ function normalizePlanFromAI(rawPlan) {
         }
 
         const discConf = AI_PLAN_CATALOG[discId] || AI_PLAN_CATALOG.rest;
+        if (discConf.onlyDuration) {
+          const duration = typeof p.duration === "number" && p.duration > 0 ? Math.max(1, Math.round(p.duration)) : 20;
+          if (!parts.some(existing => existing.discId === discId)) {
+            parts.push({
+              discId,
+              id: "default",
+              label: "Stretching & Mobilität",
+              icon: discConf.icon || "🧘",
+              duration,
+              distance: null,
+              speed: "",
+              intensity: "easy"
+            });
+          }
+          continue;
+        }
+
         let subId = (p.id || "").toLowerCase();
         if (!discConf.subtypes[subId]) {
           const labelLower = (p.label || "").toLowerCase();
@@ -1109,9 +1309,9 @@ function normalizePlanFromAI(rawPlan) {
         }
 
         const subConf = discConf.subtypes[subId] || { label: p.label || subId, icon: "•", defInt: "moderate" };
-        const duration = typeof p.duration === "number" ? Math.max(0, Math.round(p.duration)) : (isRest ? 0 : 30);
-        const distance = p.distance != null && !isNaN(parseFloat(p.distance)) ? parseFloat(parseFloat(p.distance).toFixed(1)) : null;
-        const speed = p.speed ? p.speed.toString().trim() : (subConf.defSpeed || "");
+        const duration = typeof p.duration === "number" ? Math.max(0, Math.round(p.duration)) : (discId === "rest" ? 0 : 30);
+        const distance = discId === "rest" ? null : (p.distance != null && !isNaN(parseFloat(p.distance)) ? parseFloat(parseFloat(p.distance).toFixed(1)) : null);
+        const speed = discId === "rest" ? "" : (p.speed ? p.speed.toString().trim() : (subConf.defSpeed || ""));
         const intensity = ["easy", "moderate", "hard"].includes(p.intensity) ? p.intensity : (subConf.defInt || "moderate");
 
         parts.push({
@@ -1131,33 +1331,46 @@ function normalizePlanFromAI(rawPlan) {
       }
     }
 
-    // Fallback: Wenn Gemini keine Parts geliefert hat, erstellen wir sie sauber aus den Subtypes
-    if (parts.length === 0) {
-      for (const d of disciplines) {
-        const discConf = AI_PLAN_CATALOG[d] || AI_PLAN_CATALOG.rest;
-        const rawSubs = (rawDay.subtypesByDisc && rawDay.subtypesByDisc[d]) || rawDay.subtypes || [];
-        const chosenSubs = rawSubs.filter(s => discConf.subtypes[s]);
-        const finalSubs = chosenSubs.length > 0 ? chosenSubs : [Object.keys(discConf.subtypes)[0]];
+    // Sicherstellen, dass jede gewählte Disziplin in `parts` vertreten ist (Fallback)
+    for (const d of disciplines) {
+      if (parts.some(p => p.discId === d)) continue;
+      const discConf = AI_PLAN_CATALOG[d] || AI_PLAN_CATALOG.rest;
+      if (discConf.onlyDuration) {
+        parts.push({
+          discId: d,
+          id: "default",
+          label: "Stretching & Mobilität",
+          icon: discConf.icon || "🧘",
+          duration: 20,
+          distance: null,
+          speed: "",
+          intensity: "easy"
+        });
+        continue;
+      }
 
-        const count = finalSubs.length;
-        const totalDayDur = typeof rawDay.duration === "number" && rawDay.duration > 0 ? rawDay.duration : (d === "rest" ? 0 : 45);
-        const durPerPart = Math.round(totalDayDur / (disciplines.length * count));
+      const rawSubs = (rawDay.subtypesByDisc && rawDay.subtypesByDisc[d]) || rawDay.subtypes || [];
+      const chosenSubs = rawSubs.filter(s => discConf.subtypes[s]);
+      const finalSubs = chosenSubs.length > 0 ? chosenSubs : [Object.keys(discConf.subtypes)[0]];
 
-        for (const sId of finalSubs) {
-          const subConf = discConf.subtypes[sId];
-          parts.push({
-            discId: d,
-            id: sId,
-            label: subConf.label,
-            icon: subConf.icon,
-            duration: d === "rest" ? 0 : durPerPart,
-            distance: d === "rest" ? null : (rawDay.distance ? parseFloat((rawDay.distance / (disciplines.length * count)).toFixed(1)) : null),
-            speed: subConf.defSpeed || "",
-            intensity: subConf.defInt || "moderate"
-          });
-          if (!subtypesByDisc[d].includes(sId)) {
-            subtypesByDisc[d].push(sId);
-          }
+      const count = finalSubs.length;
+      const totalDayDur = typeof rawDay.duration === "number" && rawDay.duration > 0 ? rawDay.duration : (d === "rest" ? 0 : 45);
+      const durPerPart = Math.round(totalDayDur / Math.max(1, disciplines.length * count));
+
+      for (const sId of finalSubs) {
+        const subConf = discConf.subtypes[sId];
+        parts.push({
+          discId: d,
+          id: sId,
+          label: subConf.label,
+          icon: subConf.icon,
+          duration: d === "rest" ? 0 : durPerPart,
+          distance: d === "rest" ? null : (rawDay.distance ? parseFloat((rawDay.distance / (disciplines.length * count)).toFixed(1)) : null),
+          speed: subConf.defSpeed || "",
+          intensity: subConf.defInt || "moderate"
+        });
+        if (!subtypesByDisc[d].includes(sId)) {
+          subtypesByDisc[d].push(sId);
         }
       }
     }
@@ -1192,7 +1405,15 @@ function normalizePlanFromAI(rawPlan) {
       totalIntensity = "moderate";
     }
 
-    const finalType = isRest ? "rest" : (disciplines.length > 1 ? "brick" : disciplines[0]);
+    const sportDiscs = disciplines.filter(d => d !== "rest" && d !== "mobility");
+    let finalType = "rest";
+    if (sportDiscs.length > 1) {
+      finalType = "brick";
+    } else if (sportDiscs.length === 1) {
+      finalType = sportDiscs[0];
+    } else if (disciplines.includes("mobility") && !disciplines.includes("rest")) {
+      finalType = "mobility";
+    }
 
     normalizedWeek[dayKey] = {
       type: finalType,
@@ -1204,7 +1425,7 @@ function normalizePlanFromAI(rawPlan) {
       distance: totalDistance,
       speed: totalSpeed,
       intensity: totalIntensity,
-      description: rawDay.description || (disciplines.length > 1 ? "Koppeltraining" : (AI_PLAN_CATALOG[disciplines[0]]?.label || "Training")),
+      description: rawDay.description || (sportDiscs.length > 1 ? "Koppeltraining" : disciplines.map(d => AI_PLAN_CATALOG[d]?.label || d).join(" + ")),
       notes: rawDay.notes || rawDay.description || "",
       locked: isLocked
     };
@@ -1297,10 +1518,20 @@ function renderTrainingPlan(plan) {
     if (Array.isArray(day.disciplines) && day.disciplines.length > 1) {
       icon = day.disciplines.map(d => typeIcon(d)).join(" ");
       const names = day.disciplines.map(d => ({
-        ride: "RAD", run: "LAUF", swim: "SWIM"
+        ride: "RAD", run: "LAUF", swim: "SWIM", mobility: "MOBILITY", rest: "RUHE"
       }[d] || d.toUpperCase())).join(" + ");
-      typeBadgeLabel = `KOPPEL (${names})`;
-      badgeClass = "brick";
+      const sportDiscs = day.disciplines.filter(d => d !== "rest" && d !== "mobility");
+      if (sportDiscs.length > 1) {
+        typeBadgeLabel = `KOPPEL (${names})`;
+        badgeClass = "brick";
+      } else {
+        typeBadgeLabel = names;
+        badgeClass = sportDiscs[0] || day.disciplines[0];
+      }
+    } else if (Array.isArray(day.disciplines) && day.disciplines.length === 1 && day.disciplines[0] === "mobility") {
+      icon = "🧘";
+      typeBadgeLabel = "MOBILITY & STRETCHING";
+      badgeClass = "mobility";
     }
 
     let partsOrMetricsHtml = "";
@@ -1308,7 +1539,7 @@ function renderTrainingPlan(plan) {
       partsOrMetricsHtml = `
         <div class="day-parts-view-list">
           ${day.parts.map(p => {
-            const discTag = p.discId ? `<span class="disc-mini-badge badge-${p.discId}">${{ride:"Rad", run:"Lauf", swim:"Swim", rest:"Ruhe"}[p.discId] || p.discId}</span>` : "";
+            const discTag = p.discId ? `<span class="disc-mini-badge badge-${p.discId}">${{ride:"Rad", run:"Lauf", swim:"Swim", mobility:"Mobility", rest:"Ruhe"}[p.discId] || p.discId}</span>` : "";
             return `
             <div class="day-part-item">
               <div class="part-item-header">
@@ -1413,11 +1644,12 @@ function hideAiStatus() {
 
 function typeIcon(type) {
   const icons = {
-    run:   "🏃",
-    swim:  "🏊",
-    ride:  "🚴",
-    brick: "🏊🚴",
-    rest:  "😴",
+    run:      "🏃",
+    swim:     "🏊",
+    ride:     "🚴",
+    mobility: "🧘",
+    brick:    "🏊🚴",
+    rest:     "😴",
   };
   return icons[type?.toLowerCase()] ?? "🏋️";
 }

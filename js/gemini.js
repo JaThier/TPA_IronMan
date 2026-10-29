@@ -85,17 +85,8 @@ const WEEKDAY_DE = { monday:"Mo", tuesday:"Di", wednesday:"Mi", thursday:"Do", f
 // ── Initialisierung ────────────────────────────────────────
 export async function initTrainingPlan(user) {
   currentUser = user || auth?.currentUser;
-  renderPlanSkeleton();
 
-  const plan = await loadCurrentPlan();
-  if (plan) {
-    currentPlan = plan;
-    renderTrainingPlan(plan);
-  } else {
-    renderEmptyPlan();
-  }
-
-  // Setup Event-Listener
+  // Setup Event-Listener (vor dem Laden registrieren, damit die Buttons immer funktionieren)
   setupTimeframeListeners();
   document.getElementById("ai-adjust-btn")?.addEventListener("click", adjustPlanWithAI);
   document.getElementById("ai-feedback-btn")?.addEventListener("click", analyzePlanWithAI);
@@ -110,6 +101,21 @@ export async function initTrainingPlan(user) {
       renderTrainingPlan(currentPlan);
     }
   });
+
+  renderPlanSkeleton();
+
+  try {
+    const plan = await loadCurrentPlan();
+    if (plan) {
+      currentPlan = plan;
+      renderTrainingPlan(plan);
+    } else {
+      renderEmptyPlan();
+    }
+  } catch (err) {
+    console.error("[gemini] Fehler beim Initialisieren des Trainingsplans:", err);
+    renderEmptyPlan();
+  }
 
   // Vorschau-Zähler für Aktivitäten aktualisieren
   await updateActivityCountPreview();
@@ -1280,6 +1286,7 @@ function renderTrainingPlan(plan) {
 
   const week = plan.weekPlan || {};
   weekContainer.innerHTML = WEEKDAYS.map((dayKey) => {
+    const dayLabel = WEEKDAY_DE[dayKey] || dayKey;
     const day = week[dayKey] || { type: "rest", duration: 0, description: "Ruhetag", intensity: "easy" };
     const isRest = day.type === "rest" || (Array.isArray(day.disciplines) && day.disciplines.length === 1 && day.disciplines[0] === "rest");
 

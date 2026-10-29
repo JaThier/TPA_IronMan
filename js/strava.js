@@ -37,6 +37,7 @@ let currentFilterSport = "all";
 let currentSearchQuery = "";
 let syncDaysSetting = 30; // Standard: 30 Tage
 let detailChartInstance = null;
+const activitySpeedProfileCache = new Map(); // id -> Array<{ min: number, kmh: number }> | null
 
 // ── Hilfsfunktion: Sortierung nach Datum (neueste zuerst) ──
 /**
@@ -677,8 +678,8 @@ function renderSelectedActivityDetail() {
       <!-- Diagramm-Bereich für diese Aktivität -->
       <div class="detail-chart-section">
         <div class="detail-chart-title">
-          <span>📈 Leistungs-Profil dieser Einheit</span>
-          <span class="chart-subtitle">Verhältnis der Metriken zu deinen Einheiten</span>
+          <span>📈 Geschwindigkeitsverlauf dieser Einheit</span>
+          <span class="chart-subtitle" id="activity-chart-subtitle">Verlauf über die Dauer &amp; Vergleich mit gleichen Einheiten</span>
         </div>
         <div class="detail-chart-wrapper">
           <canvas id="activity-detail-chart"></canvas>
@@ -691,10 +692,204 @@ function renderSelectedActivityDetail() {
   renderActivityDetailChart(activity);
 }
 
-/** Erstellt ein Chart.js Diagramm für die spezifische Aktivität */
-function renderActivityDetailChart(activity) {
-  if (typeof Chart === "undefined") return;
+/**
+ * Berechnet die durchschnittliche Geschwindigkeit einer Aktivität in km/h.
+ */
+function getActivityAvgKmh(a) {
+  if (!a) return 0;
+  if (typeof a.average_speed === "number" && a.average_speed > 0) {
+    return a.average_speed * 3.6;
+  }
+  const distKm = (parseFloat(a.distance) || 0) / 1000;
+  const hours = (parseFloat(a.moving_time) || parseFloat(a.elapsed_time) || 0) / 3600;
+  return hours > 0 ? distKm / hours : 0;
+}
 
+/**
+ * Extrahiert ein Zeit-Geschwindigkeits-Profil (Array aus { min, kmh }) aus Stream-, Split- oder Lap-Daten.
+ * Gibt null zurück, falls nur die Durchschnittsgeschwindigkeit vorliegt.
+ */
+function extractProfileFromData(activity, streamsData = null, detailData = null) {
+  // 1. Aus Streams (time + velocity_smooth oder distance)
+  const timeStream = streamsData?.time?.data || (Array.isArray(streamsData) ? streamsData.find(s => s.type === "time")?.data : null);
+  const velStream = streamsData?.velocity_smooth?.data || (Array.isArray(streamsData) ? streamsData.find(s => s.type === "velocity_smooth")?.data : null);
+  const distStream = streamsData?.distance?.data || (Array.isArray(streamsData) ? streamsData.find(s => s.type === "distance")?.data : null);
+
+  if (Array.isArray(timeStream) && timeStream.length > 1 && (Array.isArray(velStream) || Array.isArray(distStream))) {
+    const rawPoints = [];
+    for (let i = 0; i < timeStream.length; i++) {
+      const tMin = (timeStream[i] || 0) / 60;
+      let kmh = 0;
+      if (Array.isArray(velStream) && velStream[i] != null) {
+        kmh = velStream[i] * 3.6;
+      } else if (Array.isArray(distStream) && i > 0) {
+        const dt = timeStream[i] - timeStream[i - 1];
+        const dd = distStream[i] - distStream[i - 1];
+        kmh = dt > 0 ? (dd / dt) * 3.6 : 0;
+      }
+      rawPoints.push({ min: tMin, kmh: Math.max(0, kmh) });
+    }
+
+    // Auf ca. 40 Stützpunkte glätten / herunterbrechen für saubere Darstellung
+    const targetBuckets = 40;
+    if (rawPoints.length <= targetBuckets) {
+      return rawPoints.map(p => ({ min: Math.round(p.min * 10) / 10, kmh: Math.round(p.kmh * 100) / 100 }));
+    }
+    const step = rawPoints.length / targetBuckets;
+    const sampled = [];
+    for (let b = 0; b < targetBuckets; b++) {
+      const startIdx = Math.floor(b * step);
+      const endIdx = Math.min(rawPoints.length, Math.floor((b + 1) * step));
+      if (endIdx <= startIdx) continue;
+      let sumKmh = 0;
+      for (let j = startIdx; j < endIdx; j++) sumKmh += rawPoints[j].kmh;
+      const avgKmh = sumKmh / (endIdx - startIdx);
+      const midMin = rawPoints[Math.floor((startIdx + endIdx - 1) / 2)].min;
+      sampled.push({ min: Math.round(midMin * 10) / 10, kmh: Math.round(avgKmh * 100) / 100 });
+    }
+    // Startpunkt bei 0 Min ergänzen, falls nötig
+    if (sampled.length > 0 && sampled[0].min > 0) {
+      sampled.unshift({ min: 0, kmh: sampled[0].kmh });
+    }
+    return sampled;
+  }
+
+  // 2. Aus Splits oder Laps (falls vorhanden)
+  const splits = detailData?.splits_metric || detailData?.laps || activity?.splits_metric || activity?.laps;
+  if (Array.isArray(splits) && splits.length > 1) {
+    const points = [];
+    let cumSec = 0;
+    splits.forEach((s, idx) => {
+      const dur = parseFloat(s.moving_time) || parseFloat(s.elapsed_time) || 0;
+      const spd = typeof s.average_speed === "number" && s.average_speed > 0
+        ? s.average_speed * 3.6
+        : (dur > 0 ? ((parseFloat(s.distance) || 0) / dur) * 3.6 : 0);
+      if (idx === 0) {
+        points.push({ min: 0, kmh: Math.round(spd * 100) / 100 });
+      }
+      cumSec += dur;
+      points.push({ min: Math.round((cumSec / 60) * 10) / 10, kmh: Math.round(spd * 100) / 100 });
+    });
+    if (points.length > 1) return points;
+  }
+
+  return null;
+}
+
+/**
+ * Versucht für eine Aktivität echte Verlaufsdaten (Streams oder Splits) von Strava zu laden und zu cachen.
+ */
+async function fetchActivitySpeedProfile(activity) {
+  if (!activity?.id) return null;
+  if (activitySpeedProfileCache.has(activity.id)) {
+    return activitySpeedProfileCache.get(activity.id);
+  }
+
+  // Prüfen ob bereits im Objekt selbst Splits/Laps vorhanden sind
+  const localProfile = extractProfileFromData(activity);
+  if (localProfile) {
+    activitySpeedProfileCache.set(activity.id, localProfile);
+    return localProfile;
+  }
+
+  if (!stravaTokens?.accessToken) {
+    activitySpeedProfileCache.set(activity.id, null);
+    return null;
+  }
+
+  try {
+    const token = await getValidAccessToken();
+    // 1. Versuch: Strava Streams API (time, velocity_smooth, distance)
+    const streamUrl = `${STRAVA_API_BASE}/activities/${activity.id}/streams?keys=time,velocity_smooth,distance&key_by_type=true`;
+    const res = await fetch(streamUrl, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (res.ok) {
+      const streamsData = await res.json();
+      const profile = extractProfileFromData(activity, streamsData, null);
+      if (profile && profile.length > 1) {
+        activitySpeedProfileCache.set(activity.id, profile);
+        return profile;
+      }
+    }
+
+    // 2. Versuch: Einzelne Aktivität abrufen für splits_metric / laps
+    const detailUrl = `${STRAVA_API_BASE}/activities/${activity.id}`;
+    const detailRes = await fetch(detailUrl, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (detailRes.ok) {
+      const detailData = await detailRes.json();
+      const profile = extractProfileFromData(activity, null, detailData);
+      if (profile && profile.length > 1) {
+        activitySpeedProfileCache.set(activity.id, profile);
+        return profile;
+      }
+    }
+  } catch (err) {
+    console.warn("[strava] Konnte Detail-Geschwindigkeitsverlauf nicht laden, nutze Durchschnittsgerade:", err);
+  }
+
+  activitySpeedProfileCache.set(activity.id, null);
+  return null;
+}
+
+/**
+ * Interpoliert die Geschwindigkeit (km/h) an einem Zeitpunkt tMin aus einem Profil.
+ */
+function interpolateSpeedAtMinute(profile, tMin, fallbackKmh) {
+  if (!Array.isArray(profile) || profile.length === 0) return fallbackKmh;
+  if (tMin <= profile[0].min) return profile[0].kmh;
+  const last = profile[profile.length - 1];
+  if (tMin >= last.min) return last.kmh;
+
+  for (let i = 0; i < profile.length - 1; i++) {
+    const p0 = profile[i];
+    const p1 = profile[i + 1];
+    if (tMin >= p0.min && tMin <= p1.min) {
+      const span = p1.min - p0.min;
+      if (span <= 0) return p0.kmh;
+      const ratio = (tMin - p0.min) / span;
+      return p0.kmh + ratio * (p1.kmh - p0.kmh);
+    }
+  }
+  return fallbackKmh;
+}
+
+/** Erstellt ein Chart.js Liniendiagramm für den Geschwindigkeitsverlauf über die Dauer */
+async function renderActivityDetailChart(activity) {
+  if (typeof Chart === "undefined" || !activity) return;
+
+  const subtitleEl = document.getElementById("activity-chart-subtitle");
+
+  // Ähnliche Aktivitäten derselben Sportart finden
+  const sameTypeActs = allActivities.filter(a => {
+    if (isBike(activity)) return isBike(a);
+    if (isRun(activity)) return isRun(a);
+    if (isSwim(activity)) return isSwim(a);
+    return a.type === activity.type;
+  });
+  const typeLabel = isBike(activity) ? "Rad" : (isRun(activity) ? "Lauf" : (isSwim(activity) ? "Schwimm" : (activity.type || "Sport")));
+
+  const durationMin = Math.max(1, Math.round((parseFloat(activity.moving_time) || parseFloat(activity.elapsed_time) || 60) / 60));
+  const thisAvgKmh = getActivityAvgKmh(activity);
+
+  // Zeichne zuerst sofort mit den bereits bekannten Daten (oder Horizontallinie),
+  // und aktualisiere, falls der Stream-Request echte Verlaufsdaten liefert.
+  const cachedProfile = activitySpeedProfileCache.get(activity.id) || null;
+  drawSpeedChart(activity, cachedProfile, sameTypeActs, typeLabel, durationMin, thisAvgKmh, subtitleEl);
+
+  if (!activitySpeedProfileCache.has(activity.id)) {
+    const fetchedProfile = await fetchActivitySpeedProfile(activity);
+    // Prüfen, ob der Nutzer noch auf derselben Aktivität ist
+    if (selectedActivityId === activity.id && fetchedProfile) {
+      drawSpeedChart(activity, fetchedProfile, sameTypeActs, typeLabel, durationMin, thisAvgKmh, subtitleEl);
+    }
+  }
+}
+
+function drawSpeedChart(activity, profile, sameTypeActs, typeLabel, durationMin, thisAvgKmh, subtitleEl) {
   if (detailChartInstance) {
     detailChartInstance.destroy();
   }
@@ -702,48 +897,101 @@ function renderActivityDetailChart(activity) {
   const ctx = document.getElementById("activity-detail-chart")?.getContext("2d");
   if (!ctx) return;
 
-  // Ähnliche Aktivitäten desselben Typs für den Vergleich berechnen (inkl. VirtualRide für Rad)
-  const sameTypeActs = allActivities.filter(a => {
-    if (isBike(activity)) return isBike(a);
-    if (isRun(activity)) return isRun(a);
-    if (isSwim(activity)) return isSwim(a);
-    return a.type === activity.type;
-  });
-  const typeLabel = isBike(activity) ? "Rad" : (isRun(activity) ? "Lauf" : (isSwim(activity) ? "Schwimm" : activity.type));
-  const avgDist = sameTypeActs.reduce((s, a) => s + a.distance, 0) / (sameTypeActs.length || 1) / 1000;
-  const avgDuration = sameTypeActs.reduce((s, a) => s + a.moving_time, 0) / (sameTypeActs.length || 1) / 60;
-  const avgElev = sameTypeActs.reduce((s, a) => s + (a.total_elevation_gain || 0), 0) / (sameTypeActs.length || 1);
+  const hasDetailedProfile = Array.isArray(profile) && profile.length > 1;
 
-  const thisDist = activity.distance / 1000;
-  const thisDuration = activity.moving_time / 60;
-  const thisElev = activity.total_elevation_gain || 0;
+  // Stützstellen auf der Zeitachse (0 bis Dauer der Aktivität) erzeugen
+  let timePointsMin = [];
+  if (hasDetailedProfile) {
+    timePointsMin = profile.map(p => p.min);
+  } else {
+    const steps = Math.min(30, Math.max(10, durationMin));
+    for (let i = 0; i <= steps; i++) {
+      timePointsMin.push(Math.round(((i / steps) * durationMin) * 10) / 10);
+    }
+  }
+
+  // 1. Datenreihe: Diese Aktivität (echter Verlauf oder horizontale Gerade der Durchschnittsgeschwindigkeit)
+  const thisSpeedSeries = timePointsMin.map(tMin => {
+    const val = hasDetailedProfile
+      ? interpolateSpeedAtMinute(profile, tMin, thisAvgKmh)
+      : thisAvgKmh;
+    return Math.round(val * 100) / 100;
+  });
+
+  // 2. Datenreihe: Geschwindigkeitsschnitt im Verlaufe der Zeit aus gleichen Arten von Aktivitäten
+  // Zu jedem Zeitpunkt tMin werden alle Aktivitäten gleichen Typs berücksichtigt, die mindestens bis tMin dauern
+  // (falls keine Einheit so lange dauerte, wird auf den Gesamtschnitt aller gleichen Einheiten zurückgegriffen).
+  const overallSameTypeAvgKmh = sameTypeActs.length > 0
+    ? sameTypeActs.reduce((sum, a) => sum + getActivityAvgKmh(a), 0) / sameTypeActs.length
+    : thisAvgKmh;
+
+  const peerAvgSeries = timePointsMin.map(tMin => {
+    const activeAtTime = sameTypeActs.filter(a => {
+      const aDurMin = (parseFloat(a.moving_time) || parseFloat(a.elapsed_time) || 0) / 60;
+      return aDurMin >= tMin;
+    });
+    const pool = activeAtTime.length > 0 ? activeAtTime : sameTypeActs;
+    if (pool.length === 0) return Math.round(overallSameTypeAvgKmh * 100) / 100;
+
+    const sumKmh = pool.reduce((sum, a) => {
+      const prof = activitySpeedProfileCache.get(a.id);
+      const aAvg = getActivityAvgKmh(a);
+      const spd = (Array.isArray(prof) && prof.length > 1)
+        ? interpolateSpeedAtMinute(prof, tMin, aAvg)
+        : aAvg;
+      return sum + spd;
+    }, 0);
+
+    return Math.round((sumKmh / pool.length) * 100) / 100;
+  });
+
+  if (subtitleEl) {
+    subtitleEl.textContent = hasDetailedProfile
+      ? `Geschwindigkeitsverlauf über ${durationMin} Min. vs. Ø aus ${sameTypeActs.length} ${typeLabel}-Einheiten`
+      : `Ø Geschwindigkeit (${thisAvgKmh.toFixed(1)} km/h, horizontale Gerade) vs. Ø Verlauf aus ${sameTypeActs.length} ${typeLabel}-Einheiten`;
+  }
+
+  const labels = timePointsMin.map(m => `${Math.round(m)} Min.`);
 
   detailChartInstance = new Chart(ctx, {
-    type: "bar",
+    type: "line",
     data: {
-      labels: ["Distanz (km)", "Dauer (Min)", "Höhenmeter (hm)"],
+      labels,
       datasets: [
         {
-          label: "Diese Aktivität",
-          data: [Math.round(thisDist * 10) / 10, Math.round(thisDuration), Math.round(thisElev)],
-          backgroundColor: "rgba(232, 57, 30, 0.85)",
+          label: hasDetailedProfile
+            ? "Geschwindigkeit dieser Einheit (km/h)"
+            : `Ø Geschwindigkeit dieser Einheit (${thisAvgKmh.toFixed(1)} km/h)`,
+          data: thisSpeedSeries,
           borderColor: "#e8391e",
-          borderWidth: 1,
-          borderRadius: 4,
+          backgroundColor: "rgba(232, 57, 30, 0.15)",
+          borderWidth: 2.5,
+          pointRadius: hasDetailedProfile ? 2 : 0,
+          pointHoverRadius: 5,
+          tension: hasDetailedProfile ? 0.3 : 0,
+          fill: true,
         },
         {
-          label: `Dein Ø (${sameTypeActs.length} ${typeLabel}-Einheiten)`,
-          data: [Math.round(avgDist * 10) / 10, Math.round(avgDuration), Math.round(avgElev)],
-          backgroundColor: "rgba(100, 116, 139, 0.5)",
+          label: `Ø Verlauf (${sameTypeActs.length} ${typeLabel}-Einheiten)`,
+          data: peerAvgSeries,
           borderColor: "#64748b",
-          borderWidth: 1,
-          borderRadius: 4,
+          backgroundColor: "rgba(100, 116, 139, 0.1)",
+          borderWidth: 2,
+          borderDash: [6, 4],
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0.25,
+          fill: false,
         }
       ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: {
+        mode: "index",
+        intersect: false,
+      },
       plugins: {
         legend: {
           labels: { color: "#94a3b8", font: { family: "Inter", size: 11 } }
@@ -755,15 +1003,44 @@ function renderActivityDetailChart(activity) {
           borderColor: "#252a40",
           borderWidth: 1,
           padding: 8,
+          callbacks: {
+            label: (context) => {
+              const val = typeof context.parsed?.y === "number" ? context.parsed.y.toFixed(1) : context.formattedValue;
+              return `${context.dataset.label}: ${val} km/h`;
+            }
+          }
         }
       },
       scales: {
         x: {
-          ticks: { color: "#94a3b8", font: { family: "Inter", size: 11 } },
+          title: {
+            display: true,
+            text: "Dauer (Minuten)",
+            color: "#64748b",
+            font: { family: "Inter", size: 11 }
+          },
+          ticks: {
+            color: "#94a3b8",
+            font: { family: "Inter", size: 11 },
+            maxTicksLimit: 10
+          },
           grid: { color: "rgba(37, 42, 64, 0.3)" }
         },
         y: {
-          ticks: { color: "#94a3b8", font: { family: "Inter", size: 11 } },
+          title: {
+            display: true,
+            text: "km/h",
+            color: "#64748b",
+            font: { family: "Inter", size: 11 }
+          },
+          beginAtZero: false,
+          suggestedMin: Math.max(0, Math.floor(Math.min(...thisSpeedSeries, ...peerAvgSeries) * 0.85)),
+          suggestedMax: Math.ceil(Math.max(...thisSpeedSeries, ...peerAvgSeries) * 1.1),
+          ticks: {
+            color: "#94a3b8",
+            font: { family: "Inter", size: 11 },
+            callback: (v) => `${v} km/h`
+          },
           grid: { color: "rgba(37, 42, 64, 0.3)" }
         }
       }

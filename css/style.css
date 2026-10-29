@@ -3151,6 +3151,28 @@ body {
   color-scheme:  dark;
 }
 
+/* ── KI-Assistenz: Benutzerdefiniertes Hinweis-Textfeld ──── */
+.ai-custom-prompt-box {
+  background:    var(--clr-surface-2);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+  padding:       0.875rem 1.15rem;
+}
+
+.ai-prompt-label {
+  display:       block;
+  font-size:     0.8125rem;
+  font-weight:   600;
+  color:         var(--clr-text-dim);
+  margin-bottom: 0.45rem;
+}
+
+.ai-user-prompt-textarea {
+  background: var(--clr-surface);
+  font-size:  0.875rem;
+  min-height: 58px;
+}
+
 
 
 

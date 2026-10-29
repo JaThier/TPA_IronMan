@@ -359,9 +359,10 @@ async function adjustPlanWithAI() {
       return !isNaN(d) && d >= cutoff;
     });
 
-    // 2. Athleten-Profil & gefilterte Aktivitäten in den Prompt einbinden
+    // 2. Athleten-Profil, benutzerdefinierte Hinweise & gefilterte Aktivitäten in den Prompt einbinden
     const athleteMetrics = await loadAthleteProfileMetrics();
-    const prompt = buildPrompt(currentPlan, filteredActs, aiTimeframeDays, athleteMetrics);
+    const customUserPrompt = document.getElementById("ai-user-prompt-input")?.value?.trim() || "";
+    const prompt = buildPrompt(currentPlan, filteredActs, aiTimeframeDays, athleteMetrics, customUserPrompt);
 
     // 3. Gemini API aufrufen
     showAiStatus("🧠 Gemini erstellt deinen personalisierten Trainingsplan-Vorschlag…");
@@ -482,9 +483,10 @@ async function analyzePlanWithAI() {
       return !isNaN(d) && d >= cutoff;
     });
 
-    // 2. Prompt für Feedback bauen (inkl. Athleten-Profil)
+    // 2. Prompt für Feedback bauen (inkl. Athleten-Profil & benutzerdefinierter Hinweise)
     const athleteMetrics = await loadAthleteProfileMetrics();
-    const prompt = buildFeedbackPrompt(currentPlan, filteredActs, aiTimeframeDays, athleteMetrics);
+    const customUserPrompt = document.getElementById("ai-user-prompt-input")?.value?.trim() || "";
+    const prompt = buildFeedbackPrompt(currentPlan, filteredActs, aiTimeframeDays, athleteMetrics, customUserPrompt);
 
     // 3. Gemini API aufrufen
     showAiStatus("🧠 Gemini Headcoach wertet deinen Plan aus und formuliert Feedback…");
@@ -625,10 +627,15 @@ Auszug jüngster Einheiten:
 ${listExcerpt}`;
 }
 
-function buildFeedbackPrompt(currentPlan, activities, timeframeDays, athleteMetrics = {}) {
+function buildFeedbackPrompt(currentPlan, activities, timeframeDays, athleteMetrics = {}, customUserPrompt = "") {
   const planSummary = formatPlanForFeedbackPrompt(currentPlan);
   const actsSummary = formatActivitiesForFeedbackPrompt(activities, timeframeDays);
   const profileSummary = formatAthleteProfileForPrompt(athleteMetrics);
+
+  const userPromptSection = customUserPrompt
+    ? `\n## 💬 Spezifische Hinweise / Fragen des Athleten für diese Analyse (UNBEDINGT BEACHTEN!)
+"${customUserPrompt}"\n`
+    : "";
 
   return `Du bist ein hochqualifizierter Triathlon-Headcoach (Spezialisierung Langdistanz / Ironman).
 Der Athlet möchte eine professionelle Analyse und konstruktives Feedback zu seinem AKTUELLES WOCHENTRAININGPLAN, basierend auf seinen persönlichen Profil-/Körperdaten und seinen tatsächlich absolvierten Einheiten der vergangenen ${timeframeDays} Tage.
@@ -640,7 +647,7 @@ Ironman-Vorbereitung (3,8 km Schwimmen, 180 km Radfahren, 42,2 km Laufen).
 
 ## Persönliches Athleten-Profil & Physiologie
 ${profileSummary}
-
+${userPromptSection}
 ## Trainingshistorie des Athleten (letzte ${timeframeDays} Tage)
 ${actsSummary}
 
@@ -844,13 +851,19 @@ function renderPlanFeedback(feedback, timeframeDays, activitiesCount) {
 }
 
 // ── Prompt-Builder ─────────────────────────────────────────
-function buildPrompt(currentPlan, activities, timeframeDays, athleteMetrics = {}) {
+function buildPrompt(currentPlan, activities, timeframeDays, athleteMetrics = {}, customUserPrompt = "") {
   const cutoffDate = new Date(Date.now() - (timeframeDays * 24 * 3600 * 1000));
   const dateStr = cutoffDate.toLocaleDateString("de-DE");
 
   const actsSummary = formatActivitiesForFeedbackPrompt(activities, timeframeDays);
   const currentPlanStr = formatPlanForFeedbackPrompt(currentPlan);
   const profileSummary = formatAthleteProfileForPrompt(athleteMetrics);
+
+  const userPromptSection = customUserPrompt
+    ? `\n## 💬 ZUSÄTZLICHE WÜNSCHE & HINWEISE DES ATHLETEN FÜR DIESE WOCHE (SEHR WICHTIG!)
+Der Athlet hat folgenden direkten Hinweis für die Erstellung dieses Trainingsplans eingegeben. Setze diese Vorgaben (sofern sie nicht den mit 🔒 fixierten Tagen widersprechen) zwingend im neuen Wochenplan um und gehe in der \`coachNote\` kurz darauf ein:
+"${customUserPrompt}"\n`
+    : "";
 
   // Fixierte Tage erfassen
   const lockedDaysList = [];
@@ -889,7 +902,7 @@ ${actsSummary}
 
 ## Bisheriger Trainingsplan
 ${currentPlanStr}
-${lockedSection}
+${lockedSection}${userPromptSection}
 ## Trainingsphilosophie für den Ironman
 1. **Belastungssteuerung & Erholung**: Mindestens 1 echter Ruhetag pro Woche (z. B. Montag). Ruhetage dienen der Superkompensation.
 2. **Triathlon-Spezifik**: Am Wochenende ist mindestens 1 Koppeleinheit (Brick: Radfahren gefolgt von einem Koppellauf) oder ein langer Lauf (Longrun) einzuplanen.

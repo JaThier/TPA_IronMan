@@ -343,10 +343,19 @@ export const PLAN_DISCIPLINES = {
     speedPlaceholder: "–",
     isRest: true,
     subtypes: [
-      { id: "ruhe",      label: "Komplette Erholung",    icon: "🛏️" },
-      { id: "mobility",  label: "Stretching & Mobilität", icon: "🧘" },
-      { id: "blackroll", label: "Faszien & Blackroll",   icon: "🪵" },
+      { id: "ruhe", label: "Komplette Erholung", icon: "🛏️" },
     ]
+  },
+  mobility: {
+    id: "mobility",
+    label: "Mobility & Stretching",
+    fullLabel: "Stretching & Mobilität",
+    icon: "🧘",
+    badgeClass: "badge-mobility",
+    speedPlaceholder: "–",
+    isRest: false,
+    onlyDuration: true,
+    subtypes: []
   },
   swim: {
     id: "swim",
@@ -398,18 +407,18 @@ const IRONMAN_TEMPLATE = {
   weekPlan: {
     monday: {
       type: "rest",
-      disciplines: ["rest"],
-      subtypes: ["ruhe", "mobility"],
-      subtypesByDisc: { rest: ["ruhe", "mobility"] },
+      disciplines: ["rest", "mobility"],
+      subtypes: ["ruhe"],
+      subtypesByDisc: { rest: ["ruhe"], mobility: [] },
       parts: [
         { discId: "rest", id: "ruhe", label: "Ruhetag: Komplette Erholung", icon: "🛏️", duration: 0, distance: null, speed: "", intensity: "easy" },
-        { discId: "rest", id: "mobility", label: "Ruhetag: Stretching & Mobilität", icon: "🧘", duration: 20, distance: null, speed: "", intensity: "easy" }
+        { discId: "mobility", id: "default", label: "Stretching & Mobilität", icon: "🧘", duration: 20, distance: null, speed: "", intensity: "easy" }
       ],
       duration: 20,
       distance: null,
       speed: "",
       intensity: "easy",
-      description: "Ruhetag & Mobilität",
+      description: "Ruhetag + Stretching & Mobilität",
       notes: "Aktive Erholung, 20 Min. Dehnen und Faszienrolle für Beine und Rücken."
     },
     tuesday: {
@@ -619,7 +628,8 @@ function renderAccountPlanView(plan) {
         ? day.disciplines.filter(d => PLAN_DISCIPLINES[d])
         : (day.type === "brick" ? ["ride", "run"] : [day.type || "rest"]);
 
-      const isRest = disciplines.length === 1 && disciplines[0] === "rest";
+      const sportDiscs = disciplines.filter(d => d !== "rest" && d !== "mobility");
+      const isRest = sportDiscs.length === 0 && disciplines.includes("rest");
       const isMulti = disciplines.length > 1;
 
       // Icons oben rechts
@@ -629,7 +639,8 @@ function renderAccountPlanView(plan) {
       let badgeHtml = "";
       if (isMulti) {
         const discLabels = disciplines.map(d => PLAN_DISCIPLINES[d]?.label || d).join(" + ");
-        badgeHtml = `<span class="day-badge badge-brick">${escapeHtml(discLabels.toUpperCase())}</span>`;
+        const multiBadgeClass = sportDiscs.length > 1 ? "badge-brick" : (disciplines.includes("mobility") && isRest ? "badge-mobility" : (PLAN_DISCIPLINES[sportDiscs[0]]?.badgeClass || "badge-brick"));
+        badgeHtml = `<span class="day-badge ${multiBadgeClass}">${escapeHtml(discLabels.toUpperCase())}</span>`;
       } else {
         const singleDisc = PLAN_DISCIPLINES[disciplines[0]] || PLAN_DISCIPLINES.rest;
         badgeHtml = `<span class="day-badge ${singleDisc.badgeClass}">${singleDisc.label.toUpperCase()}</span>`;
@@ -757,6 +768,19 @@ function initEditorDayFromPlanDay(tpl) {
     for (const p of tpl.parts) {
       if (p && p.id) {
         let discId = p.discId;
+        // Legacy-Migration: früher war mobility/blackroll ein Subtype von rest
+        if (p.id === "mobility" || p.id === "blackroll" || p.discId === "mobility") {
+          discId = "mobility";
+          if (!disciplines.includes("mobility")) disciplines.push("mobility");
+          if (!subtypesByDisc.mobility) subtypesByDisc.mobility = [];
+          partsObj["mobility_default"] = {
+            duration: typeof p.duration === "number" ? p.duration : 20,
+            distance: "",
+            speed: "",
+            intensity: "easy"
+          };
+          continue;
+        }
         if (!discId || !PLAN_DISCIPLINES[discId]) {
           for (const d of disciplines) {
             if (PLAN_DISCIPLINES[d]?.subtypes.some(s => s.id === p.id || s.label === p.label)) {
@@ -784,14 +808,24 @@ function initEditorDayFromPlanDay(tpl) {
   // Falls in tpl.subtypesByDisc oder tpl.subtypes noch Einträge vorhanden waren
   if (tpl.subtypesByDisc && typeof tpl.subtypesByDisc === "object") {
     for (const [d, list] of Object.entries(tpl.subtypesByDisc)) {
-      if (disciplines.includes(d) && Array.isArray(list)) {
+      if (Array.isArray(list) && (list.includes("mobility") || list.includes("blackroll"))) {
+        if (!disciplines.includes("mobility")) disciplines.push("mobility");
+        if (!subtypesByDisc.mobility) subtypesByDisc.mobility = [];
+      }
+      if (disciplines.includes(d) && Array.isArray(list) && d !== "mobility") {
         list.forEach(stId => {
+          if (stId === "mobility" || stId === "blackroll") return;
           if (!subtypesByDisc[d].includes(stId)) subtypesByDisc[d].push(stId);
         });
       }
     }
   } else if (Array.isArray(tpl.subtypes)) {
     for (const stId of tpl.subtypes) {
+      if (stId === "mobility" || stId === "blackroll") {
+        if (!disciplines.includes("mobility")) disciplines.push("mobility");
+        if (!subtypesByDisc.mobility) subtypesByDisc.mobility = [];
+        continue;
+      }
       for (const d of disciplines) {
         if (PLAN_DISCIPLINES[d]?.subtypes.some(s => s.id === stId)) {
           if (!subtypesByDisc[d].includes(stId)) subtypesByDisc[d].push(stId);
@@ -802,6 +836,18 @@ function initEditorDayFromPlanDay(tpl) {
 
   // Fehlende Parts mit Defaults auffüllen
   for (const d of disciplines) {
+    if (d === "mobility") {
+      subtypesByDisc.mobility = [];
+      if (!partsObj["mobility_default"]) {
+        partsObj["mobility_default"] = {
+          duration: 20,
+          distance: "",
+          speed: "",
+          intensity: "easy"
+        };
+      }
+      continue;
+    }
     if (!subtypesByDisc[d] || subtypesByDisc[d].length === 0) {
       const defSt = PLAN_DISCIPLINES[d]?.subtypes[0]?.id || "ruhe";
       subtypesByDisc[d] = [defSt];
@@ -892,7 +938,10 @@ function renderDayEditorCard(dayKey) {
   let headerBadgeHtml = "";
   if (isMulti) {
     const labelStr = disciplines.map(d => PLAN_DISCIPLINES[d]?.label || d).join(" + ");
-    headerBadgeHtml = `<span class="day-current-type-badge badge-brick">🔄 ${escapeHtml(labelStr)} (Koppel)</span>`;
+    const sportDiscs = disciplines.filter(d => d !== "rest" && d !== "mobility");
+    headerBadgeHtml = sportDiscs.length > 1
+      ? `<span class="day-current-type-badge badge-brick">🔄 ${escapeHtml(labelStr)} (Koppel)</span>`
+      : `<span class="day-current-type-badge ${(PLAN_DISCIPLINES[sportDiscs[0] || disciplines[0]] || PLAN_DISCIPLINES.rest).badgeClass}">${(PLAN_DISCIPLINES[sportDiscs[0] || disciplines[0]] || PLAN_DISCIPLINES.rest).icon} ${escapeHtml(labelStr)}</span>`;
   } else {
     const singleDisc = PLAN_DISCIPLINES[disciplines[0]] || PLAN_DISCIPLINES.rest;
     headerBadgeHtml = `<span class="day-current-type-badge ${singleDisc.badgeClass}">${singleDisc.icon} ${singleDisc.fullLabel}</span>`;
@@ -911,34 +960,39 @@ function renderDayEditorCard(dayKey) {
     `;
   }).join("");
 
-  // 2. Arten je ausgewählter Disziplin
-  const discSubtypesSectionsHtml = disciplines.map(discId => {
-    const disc = PLAN_DISCIPLINES[discId] || PLAN_DISCIPLINES.rest;
-    const selectedSubs = (state.subtypesByDisc && state.subtypesByDisc[discId]) || [];
+  // 2. Arten je ausgewählter Disziplin (nur für Disziplinen mit Subtypes anzeigen)
+  const discSubtypesSectionsHtml = disciplines
+    .filter(discId => {
+      const disc = PLAN_DISCIPLINES[discId];
+      return disc && Array.isArray(disc.subtypes) && disc.subtypes.length > 0 && !disc.onlyDuration;
+    })
+    .map(discId => {
+      const disc = PLAN_DISCIPLINES[discId] || PLAN_DISCIPLINES.rest;
+      const selectedSubs = (state.subtypesByDisc && state.subtypesByDisc[discId]) || [];
 
-    const chips = disc.subtypes.map(st => {
-      const isSelected = selectedSubs.includes(st.id);
+      const chips = disc.subtypes.map(st => {
+        const isSelected = selectedSubs.includes(st.id);
+        return `
+          <button type="button" class="subtype-toggle-btn ${isSelected ? 'active' : ''}"
+            data-day="${dayKey}" data-disc="${disc.id}" data-subtype="${st.id}">
+            <span class="subtype-icon">${st.icon}</span>
+            <span class="subtype-name">${st.label}</span>
+          </button>
+        `;
+      }).join("");
+
       return `
-        <button type="button" class="subtype-toggle-btn ${isSelected ? 'active' : ''}"
-          data-day="${dayKey}" data-disc="${disc.id}" data-subtype="${st.id}">
-          <span class="subtype-icon">${st.icon}</span>
-          <span class="subtype-name">${st.label}</span>
-        </button>
+        <div class="discipline-subtypes-section">
+          <div class="disc-section-title">
+            <span class="disc-mini-badge ${disc.badgeClass}">${disc.icon} ${disc.label}</span>
+            <span class="disc-section-subtitle">Trainingsarten auswählen:</span>
+          </div>
+          <div class="subtype-chips-group" role="group" aria-label="Arten für ${disc.label}">
+            ${chips}
+          </div>
+        </div>
       `;
     }).join("");
-
-    return `
-      <div class="discipline-subtypes-section">
-        <div class="disc-section-title">
-          <span class="disc-mini-badge ${disc.badgeClass}">${disc.icon} ${disc.label}</span>
-          <span class="disc-section-subtitle">Trainingsarten auswählen:</span>
-        </div>
-        <div class="subtype-chips-group" role="group" aria-label="Arten für ${disc.label}">
-          ${chips}
-        </div>
-      </div>
-    `;
-  }).join("");
 
   // 3. Einstellungs-Zeilen: PRO ART JEDER DISZIPLIN EINE EIGENE KARTE!
   const settingsCards = [];
@@ -946,7 +1000,41 @@ function renderDayEditorCard(dayKey) {
     const disc = PLAN_DISCIPLINES[discId] || PLAN_DISCIPLINES.rest;
     const selectedSubs = (state.subtypesByDisc && state.subtypesByDisc[discId]) || [];
 
-    if (selectedSubs.length === 0) {
+    if (disc.onlyDuration) {
+      // Für Mobility & Stretching lässt sich einfach nur die Zeit einstellen
+      const pKey = `${discId}_default`;
+      if (!state.parts) state.parts = {};
+      if (!state.parts[pKey]) {
+        state.parts[pKey] = {
+          duration: 20,
+          distance: "",
+          speed: "",
+          intensity: "easy"
+        };
+      }
+      const p = state.parts[pKey];
+
+      settingsCards.push(`
+        <div class="subtype-part-editor-card disc-border-${discId}">
+          <div class="subtype-part-card-header">
+            <span class="part-card-badge ${disc.badgeClass}">
+              <span class="part-card-icon">${disc.icon}</span>
+              <span class="part-card-label">${disc.fullLabel}</span>
+            </span>
+            <span class="part-card-hint">Zeitdauer für ${disc.fullLabel}</span>
+          </div>
+
+          <div class="day-settings-grid" style="grid-template-columns: minmax(180px, 280px);">
+            <div class="form-group-sm">
+              <label for="input-dur-${dayKey}-${discId}-default">⏱️ Dauer (Min.)</label>
+              <input type="number" id="input-dur-${dayKey}-${discId}-default" class="plan-input part-input-duration"
+                data-day="${dayKey}" data-disc="${discId}" data-subtype="default" min="0" max="300" step="5"
+                value="${p.duration != null ? p.duration : 20}" placeholder="20" />
+            </div>
+          </div>
+        </div>
+      `);
+    } else if (selectedSubs.length === 0) {
       const pKey = `${discId}_default`;
       if (!state.parts) state.parts = {};
       if (!state.parts[pKey]) {
@@ -1087,12 +1175,13 @@ function renderDayEditorCard(dayKey) {
       </div>
 
       <div class="day-editor-row">
-        <label class="editor-field-label">1. Disziplin(en) festlegen (Tippe auf mehrere für Koppeltraining, Ruhetag setzt zurück):</label>
+        <label class="editor-field-label">1. Disziplin(en) festlegen (Tippe auf mehrere für Koppeltraining, Mobility ist frei kombinierbar):</label>
         <div class="discipline-btn-group" role="group" aria-label="Disziplin für ${dayConf.full}">
           ${discButtons}
         </div>
       </div>
 
+      ${discSubtypesSectionsHtml ? `
       <div class="day-editor-row">
         <label class="editor-field-label">
           2. Arten je Disziplin festlegen (mehrere kombinierbar):
@@ -1101,6 +1190,7 @@ function renderDayEditorCard(dayKey) {
           ${discSubtypesSectionsHtml}
         </div>
       </div>
+      ` : ''}
 
       <div class="day-editor-row">
         <label class="editor-field-label">
@@ -1173,7 +1263,8 @@ async function saveAccountPlan() {
     for (const dayKey of PLAN_WEEKDAYS) {
       const st = editorState[dayKey] || { disciplines: ["rest"], subtypesByDisc: { rest: ["ruhe"] }, parts: {}, notes: "" };
       const disciplines = (st.disciplines && st.disciplines.length > 0) ? st.disciplines : ["rest"];
-      const isRest = disciplines.length === 1 && disciplines[0] === "rest";
+      const sportDiscs = disciplines.filter(d => d !== "rest" && d !== "mobility");
+      const isRest = sportDiscs.length === 0 && disciplines.includes("rest");
 
       const partsArray = [];
       const allSubtypeIds = [];
@@ -1188,23 +1279,23 @@ async function saveAccountPlan() {
         const disc = PLAN_DISCIPLINES[discId] || PLAN_DISCIPLINES.rest;
         const subIds = (st.subtypesByDisc && st.subtypesByDisc[discId]) || [];
 
-        if (subIds.length === 0) {
+        if (disc.onlyDuration || subIds.length === 0) {
           const pKey = `${discId}_default`;
           const p = (st.parts && st.parts[pKey]) ? st.parts[pKey] : {};
-          const pDur = parseInt(p.duration, 10) || (disc.isRest ? 0 : 30);
+          const pDur = parseInt(p.duration, 10) || (disc.isRest ? 0 : (disc.onlyDuration ? 20 : 30));
           totalDuration += pDur;
 
           let pDist = null;
-          if (p.distance !== "" && p.distance != null && !isNaN(parseFloat(p.distance))) {
+          if (!disc.onlyDuration && p.distance !== "" && p.distance != null && !isNaN(parseFloat(p.distance))) {
             pDist = Math.round(parseFloat(p.distance) * 10) / 10;
             totalDistance += pDist;
             hasDistance = true;
           }
 
-          const pSpd = (p.speed || "").trim();
+          const pSpd = disc.onlyDuration ? "" : (p.speed || "").trim();
           if (pSpd) speeds.push(`${disc.label}: ${pSpd}`);
 
-          const pInt = p.intensity || (disc.isRest ? "easy" : "moderate");
+          const pInt = disc.onlyDuration ? "easy" : (p.intensity || (disc.isRest ? "easy" : "moderate"));
           if ((intensityRank[pInt] || 1) > (intensityRank[maxIntensity] || 1)) {
             maxIntensity = pInt;
           }
@@ -1261,7 +1352,7 @@ async function saveAccountPlan() {
       }
 
       // Typ für maximale Kompatibilität
-      const finalType = isRest ? "rest" : (disciplines.length > 1 ? "brick" : disciplines[0]);
+      const finalType = isRest ? "rest" : (sportDiscs.length > 1 ? "brick" : (sportDiscs[0] || disciplines[0] || "rest"));
 
       let description = st.notes?.trim() || "";
       if (!description) {
@@ -1422,17 +1513,42 @@ function setupAccountPlanListeners() {
         if (!Array.isArray(state.disciplines)) state.disciplines = ["rest"];
 
         if (clickedDisc === "rest") {
-          // Ruhetag deaktiviert alle anderen Disziplinen
-          state.disciplines = ["rest"];
-          if (!state.subtypesByDisc) state.subtypesByDisc = {};
-          state.subtypesByDisc.rest = ["ruhe"];
-          const pKey = "rest_ruhe";
-          if (!state.parts) state.parts = {};
-          if (!state.parts[pKey]) {
-            state.parts[pKey] = { duration: 0, distance: "", speed: "", intensity: "easy" };
+          // Ruhetag deaktiviert die regulären Sportarten (swim, ride, run), lässt aber ggf. ausgewähltes Mobility bestehen
+          const hadMobility = state.disciplines.includes("mobility");
+          if (state.disciplines.includes("rest") && hadMobility) {
+            // Wenn Ruhetag + Mobility aktiv war und man klickt auf Ruhetag -> Ruhetag abwählen, nur Mobility bleibt
+            state.disciplines = ["mobility"];
+          } else {
+            state.disciplines = hadMobility ? ["rest", "mobility"] : ["rest"];
+            if (!state.subtypesByDisc) state.subtypesByDisc = {};
+            state.subtypesByDisc.rest = ["ruhe"];
+            const pKey = "rest_ruhe";
+            if (!state.parts) state.parts = {};
+            if (!state.parts[pKey]) {
+              state.parts[pKey] = { duration: 0, distance: "", speed: "", intensity: "easy" };
+            }
+          }
+        } else if (clickedDisc === "mobility") {
+          // Mobility lässt sich zu jedem Tag (egal ob Ruhetag oder Sporttag) frei hinzufügen oder abwählen!
+          const idx = state.disciplines.indexOf("mobility");
+          if (idx > -1) {
+            state.disciplines.splice(idx, 1);
+            if (state.disciplines.length === 0) {
+              state.disciplines = ["rest"];
+              if (!state.subtypesByDisc) state.subtypesByDisc = {};
+              state.subtypesByDisc.rest = ["ruhe"];
+            }
+          } else {
+            state.disciplines.push("mobility");
+            if (!state.subtypesByDisc) state.subtypesByDisc = {};
+            state.subtypesByDisc.mobility = [];
+            if (!state.parts) state.parts = {};
+            if (!state.parts["mobility_default"]) {
+              state.parts["mobility_default"] = { duration: 20, distance: "", speed: "", intensity: "easy" };
+            }
           }
         } else {
-          // Klick auf Sport-Disziplin: Ruhetag immer entfernen
+          // Klick auf reguläre Sport-Disziplin (swim, ride, run): Ruhetag immer entfernen, Mobility darf bleiben
           state.disciplines = state.disciplines.filter(d => d !== "rest");
 
           const idx = state.disciplines.indexOf(clickedDisc);
@@ -1446,8 +1562,13 @@ function setupAccountPlanListeners() {
               state.subtypesByDisc.rest = ["ruhe"];
             }
           } else {
-            // Neu hinzunehmen
-            state.disciplines.push(clickedDisc);
+            // Neu hinzunehmen (vor evtl. vorhandenem 'mobility' einreihen, damit Hauptsportart zuerst steht)
+            const mobIdx = state.disciplines.indexOf("mobility");
+            if (mobIdx > -1) {
+              state.disciplines.splice(mobIdx, 0, clickedDisc);
+            } else {
+              state.disciplines.push(clickedDisc);
+            }
             if (!state.subtypesByDisc) state.subtypesByDisc = {};
             if (!Array.isArray(state.subtypesByDisc[clickedDisc]) || state.subtypesByDisc[clickedDisc].length === 0) {
               const discConf = PLAN_DISCIPLINES[clickedDisc];

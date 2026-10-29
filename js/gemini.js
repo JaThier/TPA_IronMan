@@ -537,9 +537,12 @@ function formatPlanForFeedbackPrompt(plan) {
     let typeStr = (day.type || "Aktivität").toUpperCase();
     if (Array.isArray(day.disciplines) && day.disciplines.length > 1) {
       const discNames = day.disciplines.map(d => ({
-        ride: "Rad", run: "Laufen", swim: "Schwimmen"
+        ride: "Rad", run: "Laufen", swim: "Schwimmen", mobility: "Mobility & Stretching", rest: "Ruhetag"
       }[d] || d)).join(" + ");
-      typeStr = `KOPPELTRAINING (${discNames})`;
+      const sportCount = day.disciplines.filter(d => d !== "rest" && d !== "mobility").length;
+      typeStr = sportCount > 1 ? `KOPPELTRAINING (${discNames})` : discNames.toUpperCase();
+    } else if (Array.isArray(day.disciplines) && day.disciplines.length === 1 && day.disciplines[0] === "mobility") {
+      typeStr = "MOBILITY & STRETCHING";
     }
 
     const metaParts = [];
@@ -560,7 +563,7 @@ function formatPlanForFeedbackPrompt(plan) {
 
     if (Array.isArray(day.parts) && day.parts.length > 0) {
       const partsDetail = day.parts.map(p => {
-        const discPrefix = p.discId ? `[${{ride:"Rad", run:"Laufen", swim:"Schwimmen", rest:"Ruhe"}[p.discId] || p.discId}] ` : "";
+        const discPrefix = p.discId ? `[${{ride:"Rad", run:"Laufen", swim:"Schwimmen", mobility:"Mobility & Stretching", rest:"Ruhe"}[p.discId] || p.discId}] ` : "";
         return `    - ${discPrefix}"${p.label || p.type}": ${p.duration || 0} Min${p.distance ? `, ${p.distance} km` : ""}${p.speed ? `, Pace/Tempo ${p.speed}` : ""}${p.intensity ? `, Intensität ${p.intensity}` : ""}`;
       }).join("\n");
       text += `\n  Einheiten / Abschnitte:\n${partsDetail}`;
@@ -872,7 +875,7 @@ Der Athlet hat folgenden direkten Hinweis für die Erstellung dieses Trainingspl
       if (dObj?.locked) {
         const dLabel = WEEKDAY_DE[dKey] || dKey;
         const discs = Array.isArray(dObj.disciplines) && dObj.disciplines.length > 0
-          ? dObj.disciplines.map(d => ({ ride: "Rad", run: "Laufen", swim: "Schwimmen", rest: "Ruhetag" }[d] || d)).join(" + ")
+          ? dObj.disciplines.map(d => ({ ride: "Rad", run: "Laufen", swim: "Schwimmen", mobility: "Mobility & Stretching", rest: "Ruhetag" }[d] || d)).join(" + ")
           : (dObj.type || "Ruhetag");
         const rawDiscs = Array.isArray(dObj.disciplines) && dObj.disciplines.length > 0
           ? dObj.disciplines
@@ -912,29 +915,31 @@ ${lockedSection}${userPromptSection}
 Das Dashboard nutzt ein neues, detailliertes Mehr-Disziplinen- und Abschnittsmodell. Jeder Wochentag (monday bis sunday) MUSS exakt nach diesen Regeln strukturiert sein:
 
 1. **Disziplinen (\`disciplines\`)**:
-   - Array der gewählten Disziplinen. Erlaubte IDs: \`"swim"\`, \`"ride"\`, \`"run"\`, \`"rest"\`.
-   - **KOPPELTRAINING (Brick)**: "Koppel" ist KEINE eigene Disziplin! Eine Koppeleinheit wird erzeugt, indem MEHRERE Disziplinen gewählt werden (z. B. \`["ride", "run"]\` oder \`["swim", "ride"]\`).
-   - **RUHETAG**: Hat AUSSCHLIESSLICH \`["rest"]\` als Disziplin. Ruhetag darf NIEMALS mit einer Sport-Disziplin kombiniert werden!
+   - Array der gewählten Disziplinen. Erlaubte IDs: \`"swim"\`, \`"ride"\`, \`"run"\`, \`"mobility"\`, \`"rest"\`.
+   - **KOPPELTRAINING (Brick)**: "Koppel" ist KEINE eigene Disziplin! Eine Koppeleinheit wird erzeugt, indem MEHRERE Sport-Disziplinen gewählt werden (z. B. \`["ride", "run"]\` oder \`["swim", "ride"]\`).
+   - **MOBILITY & STRETCHING (\`"mobility"\`)**: Ist eine eigenständige Disziplin und KEINE Unterart von Ruhetag! Sie kann JEDEM Tag hinzugefügt werden – sowohl einem Ruhetag (z. B. \`["rest", "mobility"]\`) als auch einem regulären Trainingstag (z. B. \`["run", "mobility"]\`). Für \`"mobility"\` wird nur die Zeit (\`duration\` in Minuten) eingestellt (keine Unterarten, \`distance: null\`, \`speed: ""\`).
+   - **RUHETAG (\`"rest"\`)**: Darf NIEMALS mit \`"swim"\`, \`"ride"\` oder \`"run"\` kombiniert werden, kann aber sehr gerne mit \`"mobility"\` kombiniert werden (\`["rest", "mobility"]\`).
 
 2. **Trainingsarten je Disziplin (\`subtypesByDisc\` & \`subtypes\`)**:
    - Für jede gewählte Disziplin in \`disciplines\` werden eine oder mehrere spezifische Arten gewählt:
      - \`swim\`: \`"technik"\` (Technik), \`"distance"\` (Distance), \`"intervalle"\` (Intervalle)
      - \`ride\`: \`"intervalle"\` (Intervalle), \`"endurance"\` (Endurance), \`"schwelle"\` (Schwelle)
      - \`run\`: \`"longrun"\` (Longrun), \`"intervalle"\` (Intervalle), \`"zone2"\` (Zone 2)
-     - \`rest\`: \`"ruhe"\` (Komplette Erholung), \`"mobility"\` (Stretching & Mobilität), \`"walk"\` (Spaziergang / Regenerativ)
-   - \`subtypesByDisc\`: Ein Objekt mit Subtype-Arrays je Disziplin, z. B. \`{ "ride": ["endurance"], "run": ["zone2"] }\`.
+     - \`mobility\`: Hat KEINE Unterarten (\`subtypesByDisc.mobility: []\`).
+     - \`rest\`: \`"ruhe"\` (Komplette Erholung)
+   - \`subtypesByDisc\`: Ein Objekt mit Subtype-Arrays je Disziplin, z. B. \`{ "ride": ["endurance"], "run": ["zone2"] }\` oder \`{ "rest": ["ruhe"], "mobility": [] }\`.
    - \`subtypes\`: Flat-Array aller gewählten Subtypes, z. B. \`["endurance", "zone2"]\`.
 
 3. **Abschnitte & Parameter (\`parts\`)**:
-   - Das Array \`parts\` enthält genau ein Objekt für JEDE gewählte Art JEDER Disziplin.
+   - Das Array \`parts\` enthält genau ein Objekt für JEDE gewählte Art JEDER Disziplin (für \`"mobility"\` genau ein Objekt mit \`"discId": "mobility"\`, \`"id": "default"\`).
    - Jedes Teil-Objekt besitzt:
-     - \`discId\`: Disziplin-ID (\`"swim"\`, \`"ride"\`, \`"run"\`, \`"rest"\`)
-     - \`id\`: Art-ID (z. B. \`"endurance"\`, \`"zone2"\`, \`"ruhe"\`)
-     - \`label\`: Bezeichnung mit Disziplin-Präfix (z. B. \`"Rad: Endurance"\`, \`"Laufen: Zone 2"\`)
+     - \`discId\`: Disziplin-ID (\`"swim"\`, \`"ride"\`, \`"run"\`, \`"mobility"\`, \`"rest"\`)
+     - \`id\`: Art-ID (z. B. \`"endurance"\`, \`"zone2"\`, \`"ruhe"\`, oder \`"default"\` bei \`"mobility"\`)
+     - \`label\`: Bezeichnung mit Disziplin-Präfix (z. B. \`"Rad: Endurance"\`, \`"Laufen: Zone 2"\`, \`"Stretching & Mobilität"\`)
      - \`icon\`: Passendes Emoji (z. B. 🔋, 💚, ⚡, 🔥, 🎯, 🌊, 🏃‍♂️, 🛏️, 🧘)
-     - \`duration\`: Dauer in Minuten (ganze Zahl, 0 bei Ruhetag)
-     - \`distance\`: Distanz in Kilometern als Zahl (z. B. 60 oder 1.8; bei reinem Ruhetag null)
-     - \`speed\`: Tempo-/Pace-/Leistungsangabe (z. B. \`"32 km/h / 230 W"\`, \`"5:15 min/km"\`, \`"1:45 min/100m"\` oder \`""\` bei Ruhetag)
+     - \`duration\`: Dauer in Minuten (ganze Zahl, 0 bei Ruhetag, z. B. 20 bei Mobility)
+     - \`distance\`: Distanz in Kilometern als Zahl (z. B. 60 oder 1.8; bei Ruhetag und Mobility null)
+     - \`speed\`: Tempo-/Pace-/Leistungsangabe (z. B. \`"32 km/h / 230 W"\`, \`"5:15 min/km"\`, \`"1:45 min/100m"\` oder \`""\` bei Ruhetag und Mobility)
      - \`intensity\`: Intensität (\`"easy"\`, \`"moderate"\` oder \`"hard"\`)
 
 4. **Tages-Gesamtwerte**:
@@ -951,18 +956,18 @@ Antworte AUSSCHLIESSLICH mit einem validen JSON-Objekt ohne Markdown-Codeblöcke
   "coachNote": "Persönliche Analyse und Begründung des Headcoaches für die Schwerpunktsetzung dieser Woche (2-3 Sätze).",
   "weekPlan": {
     "monday": {
-      "disciplines": ["rest"],
-      "subtypes": ["ruhe", "mobility"],
-      "subtypesByDisc": { "rest": ["ruhe", "mobility"] },
+      "disciplines": ["rest", "mobility"],
+      "subtypes": ["ruhe"],
+      "subtypesByDisc": { "rest": ["ruhe"], "mobility": [] },
       "parts": [
         { "discId": "rest", "id": "ruhe", "label": "Ruhetag: Komplette Erholung", "icon": "🛏️", "duration": 0, "distance": null, "speed": "", "intensity": "easy" },
-        { "discId": "rest", "id": "mobility", "label": "Ruhetag: Stretching & Mobilität", "icon": "🧘", "duration": 20, "distance": null, "speed": "", "intensity": "easy" }
+        { "discId": "mobility", "id": "default", "label": "Stretching & Mobilität", "icon": "🧘", "duration": 20, "distance": null, "speed": "", "intensity": "easy" }
       ],
       "duration": 20,
       "distance": null,
       "speed": "",
       "intensity": "easy",
-      "description": "Ruhetag & Mobilität",
+      "description": "Ruhetag + Mobility & Stretching",
       "notes": "Aktive Erholung, Faszienrolle und Dehnen für Beine und Hüfte."
     },
     "tuesday": {
@@ -1157,9 +1162,15 @@ const AI_PLAN_CATALOG = {
     label: "Ruhetag",
     icon: "😴",
     subtypes: {
-      ruhe:     { label: "Ruhetag: Komplette Erholung", icon: "🛏️", defInt: "easy", defSpeed: "" },
-      mobility: { label: "Ruhetag: Stretching & Mobilität", icon: "🧘", defInt: "easy", defSpeed: "" },
-      walk:     { label: "Ruhetag: Spaziergang / Regenerativ", icon: "🚶", defInt: "easy", defSpeed: "" }
+      ruhe: { label: "Ruhetag: Komplette Erholung", icon: "🛏️", defInt: "easy", defSpeed: "" }
+    }
+  },
+  mobility: {
+    label: "Mobility & Stretching",
+    icon: "🧘",
+    onlyDuration: true,
+    subtypes: {
+      default: { label: "Stretching & Mobilität", icon: "🧘", defInt: "easy", defSpeed: "" }
     }
   },
   swim: {
@@ -1228,13 +1239,20 @@ function normalizePlanFromAI(rawPlan) {
       disciplines = ["rest"];
     }
 
-    // Ruhetags-Regel: Ruhetag schließt alle Sportarten aus
-    if (disciplines.includes("rest")) {
-      if (disciplines.length > 1) {
-        disciplines = disciplines.filter(d => d !== "rest");
-      } else {
-        disciplines = ["rest"];
-      }
+    // Legacy-Migration: Falls KI oder bestehender Plan "mobility" noch als Subtype von "rest" übergeben hat
+    const hasLegacyMobility =
+      (Array.isArray(rawDay.subtypes) && (rawDay.subtypes.includes("mobility") || rawDay.subtypes.includes("blackroll"))) ||
+      (rawDay.subtypesByDisc?.rest && (rawDay.subtypesByDisc.rest.includes("mobility") || rawDay.subtypesByDisc.rest.includes("blackroll"))) ||
+      (Array.isArray(rawDay.parts) && rawDay.parts.some(p => p && (p.discId === "mobility" || p.id === "mobility" || p.id === "blackroll")));
+
+    if (hasLegacyMobility && !disciplines.includes("mobility") && (!isLocked || existingDay?.disciplines?.includes("mobility"))) {
+      disciplines.push("mobility");
+    }
+
+    // Ruhetags-Regel: Ruhetag schließt Sportarten (swim, ride, run) aus, darf aber mit "mobility" kombiniert werden
+    const hasMainSport = disciplines.some(d => d !== "rest" && d !== "mobility");
+    if (disciplines.includes("rest") && hasMainSport) {
+      disciplines = disciplines.filter(d => d !== "rest");
     }
     if (disciplines.length === 0) disciplines = ["rest"];
 
@@ -1249,6 +1267,9 @@ function normalizePlanFromAI(rawPlan) {
       for (const p of rawDay.parts) {
         if (!p) continue;
         let discId = p.discId;
+        if (p.id === "mobility" || p.id === "blackroll" || discId === "mobility") {
+          discId = "mobility";
+        }
         if (!discId || !AI_PLAN_CATALOG[discId]) {
           for (const d of disciplines) {
             if (AI_PLAN_CATALOG[d]?.subtypes[p.id]) { discId = d; break; }
@@ -1259,6 +1280,23 @@ function normalizePlanFromAI(rawPlan) {
         }
 
         const discConf = AI_PLAN_CATALOG[discId] || AI_PLAN_CATALOG.rest;
+        if (discConf.onlyDuration) {
+          const duration = typeof p.duration === "number" && p.duration > 0 ? Math.max(1, Math.round(p.duration)) : 20;
+          if (!parts.some(existing => existing.discId === discId)) {
+            parts.push({
+              discId,
+              id: "default",
+              label: "Stretching & Mobilität",
+              icon: discConf.icon || "🧘",
+              duration,
+              distance: null,
+              speed: "",
+              intensity: "easy"
+            });
+          }
+          continue;
+        }
+
         let subId = (p.id || "").toLowerCase();
         if (!discConf.subtypes[subId]) {
           const labelLower = (p.label || "").toLowerCase();
@@ -1271,9 +1309,9 @@ function normalizePlanFromAI(rawPlan) {
         }
 
         const subConf = discConf.subtypes[subId] || { label: p.label || subId, icon: "•", defInt: "moderate" };
-        const duration = typeof p.duration === "number" ? Math.max(0, Math.round(p.duration)) : (isRest ? 0 : 30);
-        const distance = p.distance != null && !isNaN(parseFloat(p.distance)) ? parseFloat(parseFloat(p.distance).toFixed(1)) : null;
-        const speed = p.speed ? p.speed.toString().trim() : (subConf.defSpeed || "");
+        const duration = typeof p.duration === "number" ? Math.max(0, Math.round(p.duration)) : (discId === "rest" ? 0 : 30);
+        const distance = discId === "rest" ? null : (p.distance != null && !isNaN(parseFloat(p.distance)) ? parseFloat(parseFloat(p.distance).toFixed(1)) : null);
+        const speed = discId === "rest" ? "" : (p.speed ? p.speed.toString().trim() : (subConf.defSpeed || ""));
         const intensity = ["easy", "moderate", "hard"].includes(p.intensity) ? p.intensity : (subConf.defInt || "moderate");
 
         parts.push({
@@ -1293,33 +1331,46 @@ function normalizePlanFromAI(rawPlan) {
       }
     }
 
-    // Fallback: Wenn Gemini keine Parts geliefert hat, erstellen wir sie sauber aus den Subtypes
-    if (parts.length === 0) {
-      for (const d of disciplines) {
-        const discConf = AI_PLAN_CATALOG[d] || AI_PLAN_CATALOG.rest;
-        const rawSubs = (rawDay.subtypesByDisc && rawDay.subtypesByDisc[d]) || rawDay.subtypes || [];
-        const chosenSubs = rawSubs.filter(s => discConf.subtypes[s]);
-        const finalSubs = chosenSubs.length > 0 ? chosenSubs : [Object.keys(discConf.subtypes)[0]];
+    // Sicherstellen, dass jede gewählte Disziplin in `parts` vertreten ist (Fallback)
+    for (const d of disciplines) {
+      if (parts.some(p => p.discId === d)) continue;
+      const discConf = AI_PLAN_CATALOG[d] || AI_PLAN_CATALOG.rest;
+      if (discConf.onlyDuration) {
+        parts.push({
+          discId: d,
+          id: "default",
+          label: "Stretching & Mobilität",
+          icon: discConf.icon || "🧘",
+          duration: 20,
+          distance: null,
+          speed: "",
+          intensity: "easy"
+        });
+        continue;
+      }
 
-        const count = finalSubs.length;
-        const totalDayDur = typeof rawDay.duration === "number" && rawDay.duration > 0 ? rawDay.duration : (d === "rest" ? 0 : 45);
-        const durPerPart = Math.round(totalDayDur / (disciplines.length * count));
+      const rawSubs = (rawDay.subtypesByDisc && rawDay.subtypesByDisc[d]) || rawDay.subtypes || [];
+      const chosenSubs = rawSubs.filter(s => discConf.subtypes[s]);
+      const finalSubs = chosenSubs.length > 0 ? chosenSubs : [Object.keys(discConf.subtypes)[0]];
 
-        for (const sId of finalSubs) {
-          const subConf = discConf.subtypes[sId];
-          parts.push({
-            discId: d,
-            id: sId,
-            label: subConf.label,
-            icon: subConf.icon,
-            duration: d === "rest" ? 0 : durPerPart,
-            distance: d === "rest" ? null : (rawDay.distance ? parseFloat((rawDay.distance / (disciplines.length * count)).toFixed(1)) : null),
-            speed: subConf.defSpeed || "",
-            intensity: subConf.defInt || "moderate"
-          });
-          if (!subtypesByDisc[d].includes(sId)) {
-            subtypesByDisc[d].push(sId);
-          }
+      const count = finalSubs.length;
+      const totalDayDur = typeof rawDay.duration === "number" && rawDay.duration > 0 ? rawDay.duration : (d === "rest" ? 0 : 45);
+      const durPerPart = Math.round(totalDayDur / Math.max(1, disciplines.length * count));
+
+      for (const sId of finalSubs) {
+        const subConf = discConf.subtypes[sId];
+        parts.push({
+          discId: d,
+          id: sId,
+          label: subConf.label,
+          icon: subConf.icon,
+          duration: d === "rest" ? 0 : durPerPart,
+          distance: d === "rest" ? null : (rawDay.distance ? parseFloat((rawDay.distance / (disciplines.length * count)).toFixed(1)) : null),
+          speed: subConf.defSpeed || "",
+          intensity: subConf.defInt || "moderate"
+        });
+        if (!subtypesByDisc[d].includes(sId)) {
+          subtypesByDisc[d].push(sId);
         }
       }
     }
@@ -1354,7 +1405,15 @@ function normalizePlanFromAI(rawPlan) {
       totalIntensity = "moderate";
     }
 
-    const finalType = isRest ? "rest" : (disciplines.length > 1 ? "brick" : disciplines[0]);
+    const sportDiscs = disciplines.filter(d => d !== "rest" && d !== "mobility");
+    let finalType = "rest";
+    if (sportDiscs.length > 1) {
+      finalType = "brick";
+    } else if (sportDiscs.length === 1) {
+      finalType = sportDiscs[0];
+    } else if (disciplines.includes("mobility") && !disciplines.includes("rest")) {
+      finalType = "mobility";
+    }
 
     normalizedWeek[dayKey] = {
       type: finalType,
@@ -1366,7 +1425,7 @@ function normalizePlanFromAI(rawPlan) {
       distance: totalDistance,
       speed: totalSpeed,
       intensity: totalIntensity,
-      description: rawDay.description || (disciplines.length > 1 ? "Koppeltraining" : (AI_PLAN_CATALOG[disciplines[0]]?.label || "Training")),
+      description: rawDay.description || (sportDiscs.length > 1 ? "Koppeltraining" : disciplines.map(d => AI_PLAN_CATALOG[d]?.label || d).join(" + ")),
       notes: rawDay.notes || rawDay.description || "",
       locked: isLocked
     };
@@ -1459,10 +1518,20 @@ function renderTrainingPlan(plan) {
     if (Array.isArray(day.disciplines) && day.disciplines.length > 1) {
       icon = day.disciplines.map(d => typeIcon(d)).join(" ");
       const names = day.disciplines.map(d => ({
-        ride: "RAD", run: "LAUF", swim: "SWIM"
+        ride: "RAD", run: "LAUF", swim: "SWIM", mobility: "MOBILITY", rest: "RUHE"
       }[d] || d.toUpperCase())).join(" + ");
-      typeBadgeLabel = `KOPPEL (${names})`;
-      badgeClass = "brick";
+      const sportDiscs = day.disciplines.filter(d => d !== "rest" && d !== "mobility");
+      if (sportDiscs.length > 1) {
+        typeBadgeLabel = `KOPPEL (${names})`;
+        badgeClass = "brick";
+      } else {
+        typeBadgeLabel = names;
+        badgeClass = sportDiscs[0] || day.disciplines[0];
+      }
+    } else if (Array.isArray(day.disciplines) && day.disciplines.length === 1 && day.disciplines[0] === "mobility") {
+      icon = "🧘";
+      typeBadgeLabel = "MOBILITY & STRETCHING";
+      badgeClass = "mobility";
     }
 
     let partsOrMetricsHtml = "";
@@ -1470,7 +1539,7 @@ function renderTrainingPlan(plan) {
       partsOrMetricsHtml = `
         <div class="day-parts-view-list">
           ${day.parts.map(p => {
-            const discTag = p.discId ? `<span class="disc-mini-badge badge-${p.discId}">${{ride:"Rad", run:"Lauf", swim:"Swim", rest:"Ruhe"}[p.discId] || p.discId}</span>` : "";
+            const discTag = p.discId ? `<span class="disc-mini-badge badge-${p.discId}">${{ride:"Rad", run:"Lauf", swim:"Swim", mobility:"Mobility", rest:"Ruhe"}[p.discId] || p.discId}</span>` : "";
             return `
             <div class="day-part-item">
               <div class="part-item-header">
@@ -1575,11 +1644,12 @@ function hideAiStatus() {
 
 function typeIcon(type) {
   const icons = {
-    run:   "🏃",
-    swim:  "🏊",
-    ride:  "🚴",
-    brick: "🏊🚴",
-    rest:  "😴",
+    run:      "🏃",
+    swim:     "🏊",
+    ride:     "🚴",
+    mobility: "🧘",
+    brick:    "🏊🚴",
+    rest:     "😴",
   };
   return icons[type?.toLowerCase()] ?? "🏋️";
 }

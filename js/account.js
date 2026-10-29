@@ -132,30 +132,59 @@ async function handleAccountFormSubmit(e) {
     saveBtn.textContent = "Speichere…";
   }
 
+  const parseNumOrNull = (id) => {
+    const val = document.getElementById(id)?.value;
+    if (val === undefined || val === null || val.toString().trim() === "") return null;
+    const n = parseFloat(val);
+    return isNaN(n) ? null : n;
+  };
+
+  const parseStrOrNull = (id) => {
+    const val = document.getElementById(id)?.value?.trim();
+    return val ? val : null;
+  };
+
+  const athleteMetrics = {
+    age: parseNumOrNull("account-age-input"),
+    heightCm: parseNumOrNull("account-height-input"),
+    weightKg: parseNumOrNull("account-weight-input"),
+    restingHr: parseNumOrNull("account-resting-hr-input"),
+    maxHr: parseNumOrNull("account-max-hr-input"),
+    ftpWatts: parseNumOrNull("account-ftp-input"),
+    experienceLevel: parseStrOrNull("account-experience-select"),
+    maxWeeklyHours: parseNumOrNull("account-weekly-hours-input"),
+    swimCssPace: parseStrOrNull("account-swim-css-input"),
+    runThresholdPace: parseStrOrNull("account-run-pace-input"),
+    raceDate: parseStrOrNull("account-race-date-input"),
+    targetTime: parseStrOrNull("account-target-time-input"),
+    injuriesOrNotes: parseStrOrNull("account-injuries-input"),
+  };
+
   try {
-    await updateAthleteName(newName);
+    await updateAthleteName(newName, athleteMetrics);
     await renderAccountProfile();
-    showToast("Profilname erfolgreich aktualisiert! ✅", "success");
+    showToast("Profil & Athletendaten erfolgreich gespeichert! ✅", "success");
   } catch (err) {
-    console.error("[account] Fehler beim Aktualisieren des Namens:", err);
+    console.error("[account] Fehler beim Aktualisieren des Profils:", err);
     showToast("Fehler beim Speichern: " + err.message, "error");
   } finally {
     if (saveBtn) {
       saveBtn.disabled = false;
-      saveBtn.textContent = "💾 Änderungen speichern";
+      saveBtn.textContent = "💾 Profil & Athletendaten speichern";
     }
   }
 }
 
 /**
- * Zentrale Funktion zum Aktualisieren des Namens an allen Stellen:
+ * Zentrale Funktion zum Aktualisieren des Namens und der Athletendaten:
  * 1. Firebase Auth Profile
  * 2. Firestore: users/{uid}/profile/main
  * 3. Firestore: hub/{uid} (sofortige Synchronisation im Hub)
  * 4. UI: Navbar Badge & Avatar
  * @param {string} newName
+ * @param {Object} [extraMetrics]
  */
-export async function updateAthleteName(newName) {
+export async function updateAthleteName(newName, extraMetrics = null) {
   const user = currentUser || auth.currentUser;
   if (!user) return;
 
@@ -168,11 +197,18 @@ export async function updateAthleteName(newName) {
 
   // 2. Firestore Profil speichern
   const profileRef = doc(db, "users", user.uid, "profile", "main");
-  await setDoc(profileRef, {
+  const profilePayload = {
     displayName: newName,
     name: newName,
     updatedAt: new Date().toISOString(),
-  }, { merge: true });
+    ...(extraMetrics ? { athleteMetrics: extraMetrics } : {}),
+  };
+  await setDoc(profileRef, profilePayload, { merge: true });
+
+  // Global für KI-Prompting cachen
+  if (extraMetrics) {
+    window.athleteProfileMetrics = extraMetrics;
+  }
 
   // 3. Im Hub aktualisieren (inkl. UID und E-Mail)
   const hubRef = doc(db, "hub", user.uid);
@@ -206,6 +242,8 @@ async function renderAccountProfile() {
     const profileRef = doc(db, "users", currentUser.uid, "profile", "main");
     const snap = await getDoc(profileRef);
     const profile = snap.exists() ? snap.data() : {};
+    const metrics = profile.athleteMetrics || {};
+    window.athleteProfileMetrics = metrics;
 
     const stravaRef = doc(db, "users", currentUser.uid, "profile", "strava");
     const stravaSnap = await getDoc(stravaRef);
@@ -226,6 +264,25 @@ async function renderAccountProfile() {
     if (heroName) heroName.textContent = currentName;
     if (heroEmail) heroEmail.textContent = currentUser.email;
     if (avatarLarge) avatarLarge.textContent = currentName.charAt(0).toUpperCase();
+
+    // Athleten-Metriken in die Formularfelder eintragen
+    const setFieldVal = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.value = val != null ? val : "";
+    };
+    setFieldVal("account-age-input", metrics.age);
+    setFieldVal("account-height-input", metrics.heightCm);
+    setFieldVal("account-weight-input", metrics.weightKg);
+    setFieldVal("account-resting-hr-input", metrics.restingHr);
+    setFieldVal("account-max-hr-input", metrics.maxHr);
+    setFieldVal("account-ftp-input", metrics.ftpWatts);
+    setFieldVal("account-experience-select", metrics.experienceLevel);
+    setFieldVal("account-weekly-hours-input", metrics.maxWeeklyHours);
+    setFieldVal("account-swim-css-input", metrics.swimCssPace);
+    setFieldVal("account-run-pace-input", metrics.runThresholdPace);
+    setFieldVal("account-race-date-input", metrics.raceDate);
+    setFieldVal("account-target-time-input", metrics.targetTime);
+    setFieldVal("account-injuries-input", metrics.injuriesOrNotes);
 
     // Strava-Status Badge
     if (stravaBadge) {

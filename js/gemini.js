@@ -261,6 +261,72 @@ async function loadCachedActivities() {
   }
 }
 
+async function loadAthleteProfileMetrics() {
+  if (window.athleteProfileMetrics && Object.keys(window.athleteProfileMetrics).length > 0) {
+    return window.athleteProfileMetrics;
+  }
+  const user = currentUser || auth?.currentUser;
+  if (!user?.uid) return {};
+  try {
+    const profileRef = doc(db, "users", user.uid, "profile", "main");
+    const snap = await getDoc(profileRef);
+    if (snap.exists()) {
+      const metrics = snap.data()?.athleteMetrics || {};
+      window.athleteProfileMetrics = metrics;
+      return metrics;
+    }
+  } catch (err) {
+    console.warn("[gemini] Konnte Athleten-Metriken nicht laden:", err);
+  }
+  return {};
+}
+
+function formatAthleteProfileForPrompt(metrics) {
+  if (!metrics || typeof metrics !== "object") {
+    return "Keine spezifischen Körper- oder Leistungsdaten im Profil hinterlegt.";
+  }
+  const lines = [];
+  if (metrics.age) lines.push(`- Alter: ${metrics.age} Jahre`);
+  if (metrics.heightCm) lines.push(`- Körpergröße: ${metrics.heightCm} cm`);
+  if (metrics.weightKg) lines.push(`- Gewicht: ${metrics.weightKg} kg`);
+  if (metrics.restingHr) lines.push(`- Ruhepuls: ${metrics.restingHr} bpm`);
+  if (metrics.maxHr) lines.push(`- Maximalpuls (HFmax): ${metrics.maxHr} bpm`);
+  if (metrics.ftpWatts) {
+    const wpk = metrics.weightKg ? ` (${(metrics.ftpWatts / metrics.weightKg).toFixed(2)} W/kg)` : "";
+    lines.push(`- Rad-FTP (Schwellenleistung): ${metrics.ftpWatts} W${wpk}`);
+  }
+  if (metrics.swimCssPace) lines.push(`- Schwimm-Schwelle (CSS): ${metrics.swimCssPace} min/100m`);
+  if (metrics.runThresholdPace) lines.push(`- Lauf-Schwellenpace: ${metrics.runThresholdPace} min/km`);
+
+  const expLabels = {
+    rookie: "Einsteiger / Erster Triathlon",
+    intermediate: "Fortgeschritten (Olympisch / 70.3 Erfahrung)",
+    experienced: "Erfahrener Langdistanz-Athlet",
+    ambitious: "Performance / Altersklassen-Podium",
+  };
+  if (metrics.experienceLevel) {
+    lines.push(`- Erfahrungslevel: ${expLabels[metrics.experienceLevel] || metrics.experienceLevel}`);
+  }
+  if (metrics.maxWeeklyHours) {
+    lines.push(`- Maximales Zeitbudget pro Woche: ${metrics.maxWeeklyHours} Stunden (WICHTIG: Gesamtdauer des Wochenplans darf dieses Budget nicht überschreiten!)`);
+  }
+  if (metrics.raceDate) {
+    const raceTime = new Date(metrics.raceDate).getTime();
+    const weeksLeft = !isNaN(raceTime) ? Math.max(0, Math.round((raceTime - Date.now()) / (7 * 24 * 3600 * 1000))) : null;
+    lines.push(`- Hauptwettkampf-Datum: ${metrics.raceDate}${weeksLeft !== null ? ` (noch ca. ${weeksLeft} Wochen bis zum Wettkampf)` : ""}`);
+  }
+  if (metrics.targetTime) {
+    lines.push(`- Persönliches Wettkampf-Ziel: ${metrics.targetTime}`);
+  }
+  if (metrics.injuriesOrNotes) {
+    lines.push(`- Verletzungshistorie / Einschränkungen / Besondere Hinweise: ${metrics.injuriesOrNotes}`);
+  }
+
+  return lines.length > 0
+    ? lines.join("\n")
+    : "Keine spezifischen Körper- oder Leistungsdaten im Profil hinterlegt.";
+}
+
 // ── KI-Plan-Vorschlag generieren ──────────────────────────
 async function adjustPlanWithAI() {
   let geminiApiKey;
@@ -293,8 +359,9 @@ async function adjustPlanWithAI() {
       return !isNaN(d) && d >= cutoff;
     });
 
-    // 2. Prompt bauen mit den gefilterten Aktivitäten
-    const prompt = buildPrompt(currentPlan, filteredActs, aiTimeframeDays);
+    // 2. Athleten-Profil & gefilterte Aktivitäten in den Prompt einbinden
+    const athleteMetrics = await loadAthleteProfileMetrics();
+    const prompt = buildPrompt(currentPlan, filteredActs, aiTimeframeDays, athleteMetrics);
 
     // 3. Gemini API aufrufen
     showAiStatus("🧠 Gemini erstellt deinen personalisierten Trainingsplan-Vorschlag…");
@@ -415,8 +482,9 @@ async function analyzePlanWithAI() {
       return !isNaN(d) && d >= cutoff;
     });
 
-    // 2. Prompt für Feedback bauen
-    const prompt = buildFeedbackPrompt(currentPlan, filteredActs, aiTimeframeDays);
+    // 2. Prompt für Feedback bauen (inkl. Athleten-Profil)
+    const athleteMetrics = await loadAthleteProfileMetrics();
+    const prompt = buildFeedbackPrompt(currentPlan, filteredActs, aiTimeframeDays, athleteMetrics);
 
     // 3. Gemini API aufrufen
     showAiStatus("🧠 Gemini Headcoach wertet deinen Plan aus und formuliert Feedback…");
@@ -557,17 +625,21 @@ Auszug jüngster Einheiten:
 ${listExcerpt}`;
 }
 
-function buildFeedbackPrompt(currentPlan, activities, timeframeDays) {
+function buildFeedbackPrompt(currentPlan, activities, timeframeDays, athleteMetrics = {}) {
   const planSummary = formatPlanForFeedbackPrompt(currentPlan);
   const actsSummary = formatActivitiesForFeedbackPrompt(activities, timeframeDays);
+  const profileSummary = formatAthleteProfileForPrompt(athleteMetrics);
 
   return `Du bist ein hochqualifizierter Triathlon-Headcoach (Spezialisierung Langdistanz / Ironman).
-Der Athlet möchte eine professionelle Analyse und konstruktives Feedback zu seinem AKTUELLES WOCHENTRAININGPLAN, basierend auf seinen tatsächlich absolvierten Einheiten der vergangenen ${timeframeDays} Tage.
+Der Athlet möchte eine professionelle Analyse und konstruktives Feedback zu seinem AKTUELLES WOCHENTRAININGPLAN, basierend auf seinen persönlichen Profil-/Körperdaten und seinen tatsächlich absolvierten Einheiten der vergangenen ${timeframeDays} Tage.
 
 WICHTIGER HINWEIS: Du sollst den Trainingsplan NICHT überschreiben und keinen neuen Plan generieren, sondern den bestehenden Plan fundiert bewerten und Feedback geben!
 
 ## Ziel
 Ironman-Vorbereitung (3,8 km Schwimmen, 180 km Radfahren, 42,2 km Laufen).
+
+## Persönliches Athleten-Profil & Physiologie
+${profileSummary}
 
 ## Trainingshistorie des Athleten (letzte ${timeframeDays} Tage)
 ${actsSummary}
@@ -772,12 +844,13 @@ function renderPlanFeedback(feedback, timeframeDays, activitiesCount) {
 }
 
 // ── Prompt-Builder ─────────────────────────────────────────
-function buildPrompt(currentPlan, activities, timeframeDays) {
+function buildPrompt(currentPlan, activities, timeframeDays, athleteMetrics = {}) {
   const cutoffDate = new Date(Date.now() - (timeframeDays * 24 * 3600 * 1000));
   const dateStr = cutoffDate.toLocaleDateString("de-DE");
 
   const actsSummary = formatActivitiesForFeedbackPrompt(activities, timeframeDays);
   const currentPlanStr = formatPlanForFeedbackPrompt(currentPlan);
+  const profileSummary = formatAthleteProfileForPrompt(athleteMetrics);
 
   // Fixierte Tage erfassen
   const lockedDaysList = [];
@@ -805,7 +878,10 @@ ${lockedDaysList.join("\n")}\n`
     : "";
 
   return `Du bist ein hochqualifizierter Triathlon-Headcoach (Ironman-Spezialist für Langdistanz: 3,8 km Schwimmen, 180 km Radfahren, 42,2 km Laufen).
-Analysiere die Trainingshistorie des Athleten aus den letzten ${timeframeDays} Tagen und erstelle einen neuen, detailgenauen und perfekt abgestimmten Wochenplan für die kommende Woche.
+Analysiere die persönlichen Körper- und Leistungsdaten sowie die Trainingshistorie des Athleten aus den letzten ${timeframeDays} Tagen und erstelle einen neuen, detailgenauen und perfekt abgestimmten Wochenplan für die kommende Woche.
+
+## Persönliches Athleten-Profil & Physiologie (für Pace, Watt, Puls-Zonen & Umfang beachten!)
+${profileSummary}
 
 ## Trainings-Historie (letzte ${timeframeDays} Tage, seit ${dateStr})
 Anzahl analysierter Einheiten: ${activities.length}

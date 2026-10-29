@@ -3097,6 +3097,60 @@ body {
   flex-wrap:   wrap;
 }
 
+/* ── Konto: Athleten-Körperdaten & Benchmarks Grid ───────── */
+.account-section-divider {
+  border:     0;
+  border-top: 1px solid var(--clr-border);
+  margin:     1.5rem 0 1.25rem;
+}
+
+.account-section-header {
+  margin-bottom: 1rem;
+}
+
+.account-section-header h4 {
+  font-size:     1rem;
+  font-weight:   700;
+  color:         #fff;
+  margin-bottom: 0.25rem;
+}
+
+.account-section-header p {
+  font-size:   0.8125rem;
+  color:       var(--clr-text-muted);
+  line-height: 1.5;
+}
+
+.account-metrics-grid {
+  display:               grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap:                   1rem;
+}
+
+@media (max-width: 900px) {
+  .account-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .account-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.form-input-date {
+  width:         100%;
+  background:    var(--clr-surface-2);
+  border:        1px solid var(--clr-border);
+  border-radius: var(--radius-sm);
+  padding:       0.75rem 0.9rem;
+  color:         var(--clr-text);
+  font-family:   var(--font-sans);
+  font-size:     0.9375rem;
+  color-scheme:  dark;
+}
+
 
 
 

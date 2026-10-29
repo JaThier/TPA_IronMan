@@ -678,7 +678,7 @@ function renderSelectedActivityDetail() {
       <!-- Diagramm-Bereich für diese Aktivität -->
       <div class="detail-chart-section">
         <div class="detail-chart-title">
-          <span id="activity-chart-main-title">📈 ${isBike(activity) ? 'Leistungs- &amp; Herzfrequenzverlauf' : 'Geschwindigkeits- &amp; Herzfrequenzverlauf'} dieser Einheit</span>
+          <span id="activity-chart-main-title">📈 ${isBike(activity) ? 'Leistungs- &amp; Herzfrequenzverlauf' : (isRun(activity) ? 'Pace- &amp; Herzfrequenzverlauf' : 'Geschwindigkeits- &amp; Herzfrequenzverlauf')} dieser Einheit</span>
           <span class="chart-subtitle" id="activity-chart-subtitle">Verlauf über die Dauer &amp; Vergleich mit gleichen Einheiten</span>
         </div>
         <div class="detail-chart-wrapper">
@@ -953,6 +953,26 @@ async function renderActivityDetailChart(activity) {
   }
 }
 
+/**
+ * Formatiert einen Dezimalwert in Minuten pro km (z. B. 5.25 -> "5:15") als String.
+ */
+function formatPaceMinKm(paceDecimal) {
+  if (typeof paceDecimal !== "number" || isNaN(paceDecimal) || paceDecimal <= 0) return "–";
+  const totalSecs = Math.round(paceDecimal * 60);
+  const mins = Math.floor(totalSecs / 60);
+  const secs = (totalSecs % 60).toString().padStart(2, "0");
+  return `${mins}:${secs}`;
+}
+
+/**
+ * Wandelt km/h in Pace (min/km als Dezimalzahl) um und begrenzt Ausreißer (z. B. Standzeiten an Ampeln).
+ */
+function kmhToPaceMinKm(kmh, fallbackPace = 6.0) {
+  if (typeof kmh !== "number" || isNaN(kmh) || kmh <= 0.5) return fallbackPace;
+  const pace = 60 / kmh;
+  return Math.min(15, Math.max(2, pace));
+}
+
 function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, durationMin, subtitleEl) {
   if (detailChartInstance) {
     detailChartInstance.destroy();
@@ -962,9 +982,10 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
   if (!ctx) return;
 
   const bikeMode = isBike(activity);
+  const runMode = isRun(activity);
   const primaryField = bikeMode ? "watts" : "kmh";
-  const primaryUnit = bikeMode ? "W" : "km/h";
-  const primaryLabelShort = bikeMode ? "Leistung" : "Geschwindigkeit";
+  const primaryUnit = bikeMode ? "W" : (runMode ? "min/km" : "km/h");
+  const primaryLabelShort = bikeMode ? "Leistung" : (runMode ? "Pace" : "Geschwindigkeit");
 
   const hasDetailedPrimary = Array.isArray(profile) && profile.filter(p => typeof p[primaryField] === "number").length > 1;
   const hasDetailedHr = Array.isArray(profile) && profile.filter(p => typeof p.hr === "number" && p.hr > 0).length > 1;
@@ -980,16 +1001,33 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
     }
   }
 
-  // ── 1. Primäre Metrik (Watt für Rad, km/h für andere Sportarten) ──
-  const thisPrimaryAvg = bikeMode ? (getActivityAvgWatts(activity) ?? 0) : getActivityAvgKmh(activity);
+  // ── 1. Primäre Metrik (Watt für Rad, Pace min/km für Laufen, km/h für andere Sportarten) ──
+  const thisAvgKmhVal = getActivityAvgKmh(activity);
+  const thisAvgPaceVal = kmhToPaceMinKm(thisAvgKmhVal, 6.0);
+  const thisPrimaryAvg = bikeMode
+    ? (getActivityAvgWatts(activity) ?? 0)
+    : (runMode ? thisAvgPaceVal : thisAvgKmhVal);
   const hasThisPrimaryData = bikeMode ? (hasDetailedPrimary || getActivityAvgWatts(activity) != null) : true;
 
   const thisPrimarySeries = hasThisPrimaryData
     ? timePointsMin.map(tMin => {
-        const val = hasDetailedPrimary
-          ? interpolateFieldAtMinute(profile, tMin, primaryField, thisPrimaryAvg)
-          : thisPrimaryAvg;
-        return Math.round((val ?? 0) * (bikeMode ? 1 : 100)) / (bikeMode ? 1 : 100);
+        if (bikeMode) {
+          const val = hasDetailedPrimary
+            ? interpolateFieldAtMinute(profile, tMin, "watts", thisPrimaryAvg)
+            : thisPrimaryAvg;
+          return Math.round(val ?? 0);
+        } else if (runMode) {
+          const kmhVal = hasDetailedPrimary
+            ? interpolateFieldAtMinute(profile, tMin, "kmh", thisAvgKmhVal)
+            : thisAvgKmhVal;
+          const paceVal = kmhToPaceMinKm(kmhVal, thisAvgPaceVal);
+          return Math.round(paceVal * 100) / 100;
+        } else {
+          const val = hasDetailedPrimary
+            ? interpolateFieldAtMinute(profile, tMin, "kmh", thisAvgKmhVal)
+            : thisAvgKmhVal;
+          return Math.round((val ?? 0) * 100) / 100;
+        }
       })
     : [];
 
@@ -1002,10 +1040,6 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
       })
     : sameTypeActs;
 
-  const overallPeerPrimaryAvg = primaryPeers.length > 0
-    ? primaryPeers.reduce((sum, a) => sum + (bikeMode ? (getActivityAvgWatts(a) || 0) : getActivityAvgKmh(a)), 0) / primaryPeers.length
-    : thisPrimaryAvg;
-
   const peerPrimarySeries = primaryPeers.length > 0
     ? timePointsMin.map(tMin => {
         const activeAtTime = primaryPeers.filter(a => {
@@ -1015,14 +1049,27 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
         const pool = activeAtTime.length > 0 ? activeAtTime : primaryPeers;
         const sumVal = pool.reduce((sum, a) => {
           const prof = activitySpeedProfileCache.get(a.id);
-          const aAvg = bikeMode ? (getActivityAvgWatts(a) || 0) : getActivityAvgKmh(a);
-          const val = (Array.isArray(prof) && prof.length > 1)
-            ? interpolateFieldAtMinute(prof, tMin, primaryField, aAvg)
-            : aAvg;
-          return sum + (val ?? aAvg);
+          if (bikeMode) {
+            const aAvg = getActivityAvgWatts(a) || 0;
+            const val = (Array.isArray(prof) && prof.length > 1)
+              ? interpolateFieldAtMinute(prof, tMin, "watts", aAvg)
+              : aAvg;
+            return sum + (val ?? aAvg);
+          } else {
+            const aAvgKmh = getActivityAvgKmh(a);
+            const kmhVal = (Array.isArray(prof) && prof.length > 1)
+              ? interpolateFieldAtMinute(prof, tMin, "kmh", aAvgKmh)
+              : aAvgKmh;
+            return sum + (kmhVal ?? aAvgKmh);
+          }
         }, 0);
         const avg = sumVal / pool.length;
-        return Math.round(avg * (bikeMode ? 1 : 100)) / (bikeMode ? 1 : 100);
+        if (bikeMode) return Math.round(avg);
+        if (runMode) {
+          const paceAvg = kmhToPaceMinKm(avg, thisAvgPaceVal);
+          return Math.round(paceAvg * 100) / 100;
+        }
+        return Math.round(avg * 100) / 100;
       })
     : [];
 
@@ -1073,9 +1120,13 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
       ? (hasDetailedPrimary
           ? `Watt-Verlauf über ${durationMin} Min.`
           : (hasThisPrimaryData ? `Ø Leistung (${Math.round(thisPrimaryAvg)} W, Gerade)` : `Keine Watt-Daten dieser Einheit`))
-      : (hasDetailedPrimary
-          ? `Geschwindigkeitsverlauf über ${durationMin} Min.`
-          : `Ø Geschwindigkeit (${thisPrimaryAvg.toFixed(1)} km/h, Gerade)`);
+      : (runMode
+          ? (hasDetailedPrimary
+              ? `Pace-Verlauf über ${durationMin} Min.`
+              : `Ø Pace (${formatPaceMinKm(thisPrimaryAvg)} min/km, Gerade)`)
+          : (hasDetailedPrimary
+              ? `Geschwindigkeitsverlauf über ${durationMin} Min.`
+              : `Ø Geschwindigkeit (${thisPrimaryAvg.toFixed(1)} km/h, Gerade)`));
     const hrDesc = showHrAxis ? ` • inkl. ❤️ Herzfrequenz` : "";
     subtitleEl.textContent = `${primaryDesc} vs. Ø aus ${sameTypeActs.length} ${typeLabel}-Einheiten${hrDesc}`;
   }
@@ -1083,12 +1134,16 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
   const labels = timePointsMin.map(m => `${Math.round(m)} Min.`);
   const datasets = [];
 
-  // Dataset 1: Primärer Verlauf dieser Einheit (Watt oder km/h)
+  const formattedThisAvgStr = bikeMode
+    ? `${Math.round(thisPrimaryAvg)} W`
+    : (runMode ? `${formatPaceMinKm(thisPrimaryAvg)} min/km` : `${thisPrimaryAvg.toFixed(1)} km/h`);
+
+  // Dataset 1: Primärer Verlauf dieser Einheit (Watt, min/km oder km/h)
   if (hasThisPrimaryData) {
     datasets.push({
       label: hasDetailedPrimary
         ? `${primaryLabelShort} dieser Einheit (${primaryUnit})`
-        : `Ø ${primaryLabelShort} dieser Einheit (${bikeMode ? Math.round(thisPrimaryAvg) : thisPrimaryAvg.toFixed(1)} ${primaryUnit})`,
+        : `Ø ${primaryLabelShort} dieser Einheit (${formattedThisAvgStr})`,
       data: thisPrimarySeries,
       yAxisID: "y",
       borderColor: "#e8391e",
@@ -1102,7 +1157,7 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
     });
   }
 
-  // Dataset 2: Graue Durchschnittslinie der primären Metrik (Watt oder km/h)
+  // Dataset 2: Graue Durchschnittslinie der primären Metrik (Watt, min/km oder km/h)
   if (peerPrimarySeries.length > 0) {
     datasets.push({
       label: `Ø ${primaryLabelShort} (${primaryPeers.length} ${typeLabel}-Einheiten)`,
@@ -1186,17 +1241,17 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
       display: allPrimaryVals.length > 0,
       title: {
         display: true,
-        text: bikeMode ? "Leistung (Watt)" : "Geschwindigkeit (km/h)",
+        text: bikeMode ? "Leistung (Watt)" : (runMode ? "Pace (min/km)" : "Geschwindigkeit (km/h)"),
         color: "#e8391e",
         font: { family: "Inter", size: 11, weight: "600" }
       },
       beginAtZero: false,
-      suggestedMin: Math.max(0, Math.floor(minPrimary * 0.85)),
-      suggestedMax: Math.ceil(maxPrimary * 1.1),
+      suggestedMin: runMode ? Math.max(2, Math.floor((minPrimary - 0.4) * 2) / 2) : Math.max(0, Math.floor(minPrimary * 0.85)),
+      suggestedMax: runMode ? Math.ceil((maxPrimary + 0.4) * 2) / 2 : Math.ceil(maxPrimary * 1.1),
       ticks: {
         color: "#94a3b8",
         font: { family: "Inter", size: 11 },
-        callback: (v) => `${v} ${primaryUnit}`
+        callback: (v) => runMode ? `${formatPaceMinKm(v)} min/km` : `${v} ${primaryUnit}`
       },
       grid: { color: "rgba(37, 42, 64, 0.3)" }
     }
@@ -1257,6 +1312,9 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
               const unit = context.dataset.unit || primaryUnit;
               const rawVal = context.parsed?.y;
               if (typeof rawVal !== "number") return `${context.dataset.label}: ${context.formattedValue}`;
+              if (unit === "min/km") {
+                return `${context.dataset.label}: ${formatPaceMinKm(rawVal)} min/km`;
+              }
               const formatted = (unit === "W" || unit === "bpm") ? Math.round(rawVal) : rawVal.toFixed(1);
               return `${context.dataset.label}: ${formatted} ${unit}`;
             }

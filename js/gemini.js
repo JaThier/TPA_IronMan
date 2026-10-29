@@ -76,6 +76,7 @@ async function getBestAvailableModel(apiKey) {
 // ── Zustand ────────────────────────────────────────────────
 let currentUser         = null;
 let currentPlan         = null;
+let proposedPlan        = null;
 let aiTimeframeDays     = 30; // Standard: 30 Tage
 
 // ── Wochentage ─────────────────────────────────────────────
@@ -92,33 +93,42 @@ export async function initTrainingPlan(user) {
   document.getElementById("ai-feedback-btn")?.addEventListener("click", analyzePlanWithAI);
   document.getElementById("ai-feedback-close-btn")?.addEventListener("click", () => {
     document.getElementById("ai-feedback-card")?.classList.add("hidden");
+    updateEmptyHintVisibility();
   });
+  document.getElementById("ai-accept-proposal-btn")?.addEventListener("click", acceptProposedPlan);
+  document.getElementById("ai-reject-proposal-btn")?.addEventListener("click", rejectProposedPlan);
 
-  // Synchronisation bei externen Updates (z. B. durch manuelles Bearbeiten im Konto-Tab)
+  // Synchronisation bei externen Updates (z. B. durch manuelles Bearbeiten im Trainingsplan-Tab)
   window.addEventListener("planUpdated", (e) => {
     if (e.detail) {
       currentPlan = e.detail;
-      renderTrainingPlan(currentPlan);
     }
   });
-
-  renderPlanSkeleton();
 
   try {
     const plan = await loadCurrentPlan();
     if (plan) {
       currentPlan = plan;
-      renderTrainingPlan(plan);
-    } else {
-      renderEmptyPlan();
     }
   } catch (err) {
-    console.error("[gemini] Fehler beim Initialisieren des Trainingsplans:", err);
-    renderEmptyPlan();
+    console.error("[gemini] Fehler beim Laden des bestehenden Trainingsplans:", err);
   }
+
+  updateEmptyHintVisibility();
 
   // Vorschau-Zähler für Aktivitäten aktualisieren
   await updateActivityCountPreview();
+}
+
+function updateEmptyHintVisibility() {
+  const hintCard = document.getElementById("ai-empty-hint-card");
+  const proposalCard = document.getElementById("ai-proposal-card");
+  const feedbackCard = document.getElementById("ai-feedback-card");
+  if (!hintCard) return;
+
+  const hasProposal = proposalCard && !proposalCard.classList.contains("hidden");
+  const hasFeedback = feedbackCard && !feedbackCard.classList.contains("hidden");
+  hintCard.classList.toggle("hidden", Boolean(hasProposal || hasFeedback));
 }
 
 /** Richtet die Listener für den konfigurierbaren Analyse-Zeitraum ein */
@@ -251,7 +261,7 @@ async function loadCachedActivities() {
   }
 }
 
-// ── KI-Plan generieren ─────────────────────────────────────
+// ── KI-Plan-Vorschlag generieren ──────────────────────────
 async function adjustPlanWithAI() {
   let geminiApiKey;
   try {
@@ -269,6 +279,11 @@ async function adjustPlanWithAI() {
   showAiStatus(`🤖 Analysiere deine Einheiten der letzten ${aiTimeframeDays} Tage…`);
 
   try {
+    // Sicherstellen, dass wir den aktuellsten Plan (für Lock-Status etc.) geladen haben
+    if (!currentPlan) {
+      currentPlan = await loadCurrentPlan();
+    }
+
     // 1. Aktivitäten laden und nach gewähltem Zeitraum filtern
     const allActs = await loadCachedActivities();
     const cutoff = Date.now() - (aiTimeframeDays * 24 * 3600 * 1000);
@@ -282,33 +297,90 @@ async function adjustPlanWithAI() {
     const prompt = buildPrompt(currentPlan, filteredActs, aiTimeframeDays);
 
     // 3. Gemini API aufrufen
-    showAiStatus("🧠 Gemini erstellt deinen personalisierten Trainingsplan…");
+    showAiStatus("🧠 Gemini erstellt deinen personalisierten Trainingsplan-Vorschlag…");
     const newPlanJSON = await callGeminiAPI(prompt, geminiApiKey);
 
     // 4. Plan parsen und validieren
     const newPlan = parsePlanResponse(newPlanJSON);
     if (!newPlan) throw new Error("Ungültige Plan-Struktur von Gemini");
 
-    // 5. Plan in Firestore speichern
-    showAiStatus("💾 Speichere neuen Plan in Firestore…");
-    const savedPlan = await savePlan({
+    // 5. Als Vorschlag im Tab "KI-Assistenz" anzeigen (noch NICHT speichern!)
+    proposedPlan = {
       ...newPlan,
       analyzedTimeframeDays: aiTimeframeDays,
       analyzedActivitiesCount: filteredActs.length,
-    });
+      createdAt: new Date().toISOString(),
+      aiGenerated: true,
+    };
 
-    currentPlan = savedPlan;
-    renderTrainingPlan(savedPlan);
+    renderTrainingPlan(proposedPlan);
+
+    const proposalCard = document.getElementById("ai-proposal-card");
+    if (proposalCard) {
+      proposalCard.classList.remove("hidden");
+      updateEmptyHintVisibility();
+      proposalCard.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
     hideAiStatus();
-    showToast(`✅ Trainingsplan erfolgreich angepasst (${filteredActs.length} Einheiten analysiert)!`, "success");
+    showToast(`✨ Neuer Trainingsplan-Vorschlag erstellt! Du kannst ihn jetzt prüfen und annehmen oder ablehnen.`, "success");
 
   } catch (err) {
     console.error("Gemini Fehler:", err);
     hideAiStatus();
-    showToast(`KI-Anpassung fehlgeschlagen: ${err.message}`, "error");
+    showToast(`KI-Vorschlag fehlgeschlagen: ${err.message}`, "error");
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+/**
+ * Nimmt den generierten KI-Vorschlag an, überschreibt damit den aktuellen Trainingsplan in Firestore
+ * und synchronisiert den Trainingsplan-Tab.
+ */
+async function acceptProposedPlan() {
+  if (!proposedPlan) return;
+
+  const acceptBtn = document.getElementById("ai-accept-proposal-btn");
+  const rejectBtn = document.getElementById("ai-reject-proposal-btn");
+  if (acceptBtn) {
+    acceptBtn.disabled = true;
+    acceptBtn.textContent = "💾 Übernehme Trainingsplan…";
+  }
+  if (rejectBtn) rejectBtn.disabled = true;
+
+  try {
+    const savedPlan = await savePlan(proposedPlan);
+    currentPlan = savedPlan;
+    proposedPlan = null;
+
+    document.getElementById("ai-proposal-card")?.classList.add("hidden");
+    updateEmptyHintVisibility();
+
+    showToast("✅ KI-Vorschlag angenommen! Dein Trainingsplan wurde aktualisiert.", "success");
+
+    // Direkt zum Trainingsplan-Tab wechseln, damit der Nutzer seinen neuen Plan sieht
+    window.location.hash = "plan";
+  } catch (err) {
+    console.error("[gemini] Fehler beim Übernehmen des Vorschlags:", err);
+    showToast(`Fehler beim Speichern des Plans: ${err.message}`, "error");
+  } finally {
+    if (acceptBtn) {
+      acceptBtn.disabled = false;
+      acceptBtn.textContent = "✅ Vorschlag annehmen & Trainingsplan überschreiben";
+    }
+    if (rejectBtn) rejectBtn.disabled = false;
+  }
+}
+
+/**
+ * Lehnt den generierten KI-Vorschlag ab und verwirft ihn, ohne den bestehenden Plan zu verändern.
+ */
+function rejectProposedPlan() {
+  proposedPlan = null;
+  document.getElementById("ai-proposal-card")?.classList.add("hidden");
+  updateEmptyHintVisibility();
+  showToast("KI-Vorschlag abgelehnt. Dein bestehender Trainingsplan bleibt unverändert.", "info");
 }
 
 // ── KI-Plan Feedback & Analyse ────────────────────────────
@@ -361,6 +433,7 @@ async function analyzePlanWithAI() {
     const card = document.getElementById("ai-feedback-card");
     if (card) {
       card.classList.remove("hidden");
+      updateEmptyHintVisibility();
       card.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 

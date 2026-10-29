@@ -67,12 +67,14 @@ async function initApp(user) {
 }
 
 // ── Tab-Navigation ─────────────────────────────────────────
+const VALID_TABS = ["activities", "plan", "ai", "hub", "account"];
+
 export function initTabNavigation() {
   const tabs = document.querySelectorAll(".nav-tab");
 
-  // URL Hash auswerten (z.B. #plan, #hub, #account)
+  // URL Hash auswerten (z.B. #plan, #ai, #hub, #account)
   const initialHash = window.location.hash.replace("#", "");
-  if (["activities", "plan", "hub", "account"].includes(initialHash)) {
+  if (VALID_TABS.includes(initialHash)) {
     switchTab(initialHash);
   } else {
     switchTab("activities");
@@ -90,7 +92,7 @@ export function initTabNavigation() {
 
   window.addEventListener("hashchange", () => {
     const hash = window.location.hash.replace("#", "");
-    if (["activities", "plan", "hub", "account"].includes(hash) && hash !== currentTab) {
+    if (VALID_TABS.includes(hash) && hash !== currentTab) {
       switchTab(hash);
     }
   });
@@ -113,14 +115,14 @@ export function switchTab(tabName) {
     view.classList.toggle("hidden", !isTarget);
   });
 
-  // Falls zum Hub, Plan oder Konto gewechselt wird, Daten aktualisieren
+  // Falls zum Hub, Plan, KI-Assistenz oder Konto gewechselt wird, Daten aktualisieren
   const cb = Date.now();
   if (tabName === "hub") {
     import(`./hub.js?cb=${cb}`).then(m => m.loadAndRenderHub());
   } else if (tabName === "plan") {
-    import(`./gemini.js?cb=${cb}`).then(m => m.updateActivityCountPreview?.());
-  } else if (tabName === "account") {
     import(`./account.js?cb=${cb}`).then(m => m.loadAndRenderAccountPlan?.());
+  } else if (tabName === "ai") {
+    import(`./gemini.js?cb=${cb}`).then(m => m.updateActivityCountPreview?.());
   }
 }
 

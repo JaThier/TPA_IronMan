@@ -521,7 +521,7 @@ function renderAccountPlanView(plan) {
           <span class="empty-icon" style="font-size: 2.5rem; display: block; margin-bottom: 0.5rem;">📋</span>
           <h4 style="margin-bottom: 0.5rem; font-size: 1.15rem;">Noch kein Trainingsplan hinterlegt</h4>
           <p style="color: var(--clr-text-muted); max-width: 500px; margin: 0 auto 1.25rem;">
-            Du kannst deinen individuellen Trainingsplan für die Woche jetzt manuell erstellen oder im Reiter <strong>Trainingsplan</strong> von der KI generieren lassen.
+            Du kannst deinen individuellen Trainingsplan für die Woche jetzt manuell erstellen oder im Reiter <strong>KI-Assistenz</strong> von Gemini einen Vorschlag generieren lassen.
           </p>
           <button type="button" id="btn-create-first-plan" class="btn btn-primary" style="width: auto;">
             ➕ Trainingsplan jetzt manuell erstellen

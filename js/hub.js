@@ -30,6 +30,7 @@ let currentHubTimeframe = (() => {
   }
 })();
 let currentHubDiscipline = "bike"; // "bike" | "run" | "swim" | "all"
+let currentHubHoursDiscipline = "all"; // "bike" | "run" | "swim" | "all"
 let currentHubUsers = [];
 let disciplinesChartInstance = null;
 let hoursChartInstance = null;
@@ -105,6 +106,10 @@ function computeStatsForTimeframe(activities, days) {
   const triKm      = Math.round((swimKm + bikeKm + runKm) * 10) / 10;
   const rawTotalKm = Math.round((periodActs.reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000) * 10) / 10;
   const totalKm    = triKm > 0 ? triKm : rawTotalKm;
+
+  const swimHours  = Math.round((periodActs.filter(isSwim).reduce((s, a) => s + (parseFloat(a.moving_time) || 0), 0) / 3600) * 10) / 10;
+  const bikeHours  = Math.round((periodActs.filter(isBike).reduce((s, a) => s + (parseFloat(a.moving_time) || 0), 0) / 3600) * 10) / 10;
+  const runHours   = Math.round((periodActs.filter(isRun).reduce((s, a) => s + (parseFloat(a.moving_time) || 0), 0) / 3600) * 10) / 10;
   const totalHours = Math.round((periodActs.reduce((s, a) => s + (parseFloat(a.moving_time) || 0), 0) / 3600) * 10) / 10;
 
   return {
@@ -114,6 +119,9 @@ function computeStatsForTimeframe(activities, days) {
     swimKm,
     bikeKm,
     runKm,
+    swimHours,
+    bikeHours,
+    runHours,
   };
 }
 
@@ -142,7 +150,18 @@ function getUserStatsForTimeframe(userDoc, tfId = currentHubTimeframe) {
 
   // 2. Gespeicherte periods aus Firestore (falls vorhanden)
   if (userDoc?.periods && userDoc.periods[tf.id]) {
-    return { ...userDoc.periods[tf.id] };
+    const p = { ...userDoc.periods[tf.id] };
+    if (p.bikeHours == null || p.runHours == null || p.swimHours == null) {
+      const estSwimH = (parseFloat(p.swimKm) || 0) / 3.0;
+      const estBikeH = (parseFloat(p.bikeKm) || 0) / 28.0;
+      const estRunH  = (parseFloat(p.runKm)  || 0) / 10.5;
+      const estSumH  = estSwimH + estBikeH + estRunH;
+      const totH     = parseFloat(p.totalHours) || estSumH || 0;
+      p.swimHours = estSumH > 0 ? Math.round((totH * (estSwimH / estSumH)) * 10) / 10 : 0;
+      p.bikeHours = estSumH > 0 ? Math.round((totH * (estBikeH / estSumH)) * 10) / 10 : 0;
+      p.runHours  = estSumH > 0 ? Math.round((totH * (estRunH / estSumH)) * 10) / 10 : 0;
+    }
+    return p;
   }
 
   // 3. Mathematisch sauberer Proportional-Fallback für ältere Hub-Dokumente
@@ -208,13 +227,22 @@ function getUserStatsForTimeframe(userDoc, tfId = currentHubTimeframe) {
   const periodSwim = Math.round(targetKm * swimRatio * 10) / 10;
   const periodTotal = Math.round((periodBike + periodRun + periodSwim) * 10) / 10;
 
+  const estSwimH = periodSwim / 3.0;
+  const estBikeH = periodBike / 28.0;
+  const estRunH  = periodRun / 10.5;
+  const estSumH  = estSwimH + estBikeH + estRunH;
+  const roundedTargetHours = Math.round(targetHours * 10) / 10;
+
   return {
     totalKm:       periodTotal > 0 ? periodTotal : Math.round(targetKm * 10) / 10,
-    totalHours:    Math.round(targetHours * 10) / 10,
+    totalHours:    roundedTargetHours,
     activityCount: targetActs,
     swimKm:        periodSwim,
     bikeKm:        periodBike,
     runKm:         periodRun,
+    swimHours:     estSumH > 0 ? Math.round((roundedTargetHours * (estSwimH / estSumH)) * 10) / 10 : 0,
+    bikeHours:     estSumH > 0 ? Math.round((roundedTargetHours * (estBikeH / estSumH)) * 10) / 10 : 0,
+    runHours:      estSumH > 0 ? Math.round((roundedTargetHours * (estRunH / estSumH)) * 10) / 10 : 0,
   };
 }
 
@@ -569,7 +597,7 @@ function renderHubContent(rawUsers) {
             <button class="chip discipline-chip ${currentHubDiscipline === 'bike' ? 'active' : ''}" data-discipline="bike" title="Nur Rad-Kilometer vergleichen">🚴 Rad</button>
             <button class="chip discipline-chip ${currentHubDiscipline === 'run' ? 'active' : ''}" data-discipline="run" title="Nur Lauf-Kilometer vergleichen">🏃 Laufen</button>
             <button class="chip discipline-chip ${currentHubDiscipline === 'swim' ? 'active' : ''}" data-discipline="swim" title="Nur Schwimm-Kilometer vergleichen">🏊 Schwimmen</button>
-            <button class="chip discipline-chip ${currentHubDiscipline === 'all' ? 'active' : ''}" data-discipline="all" title="Alle Disziplinen im Vergleich">📊 Alle</button>
+            <button class="chip discipline-chip ${currentHubDiscipline === 'all' ? 'active' : ''}" data-discipline="all" title="Gesamte Kilometer aller Disziplinen vergleichen">📊 Alle</button>
           </div>
         </div>
         <div class="chart-wrapper">
@@ -578,12 +606,17 @@ function renderHubContent(rawUsers) {
       </div>
 
       <div class="card hub-chart-card">
-        <div class="card-header">
+        <div class="card-header chart-header-with-filter">
           <div class="card-title">
             <span class="icon">⏱️</span>
-            <h3>Trainingsvolumen (Stunden)</h3>
+            <h3 id="hub-hours-chart-title">${getHoursChartTitle(currentHubHoursDiscipline, tfInfo.label)}</h3>
           </div>
-          <span class="plan-meta text-muted">Gesamte Bewegungszeit (${tfInfo.label})</span>
+          <div class="discipline-toggle-group">
+            <button class="chip hours-discipline-chip ${currentHubHoursDiscipline === 'bike' ? 'active' : ''}" data-discipline="bike" title="Nur Rad-Stunden vergleichen">🚴 Rad</button>
+            <button class="chip hours-discipline-chip ${currentHubHoursDiscipline === 'run' ? 'active' : ''}" data-discipline="run" title="Nur Lauf-Stunden vergleichen">🏃 Laufen</button>
+            <button class="chip hours-discipline-chip ${currentHubHoursDiscipline === 'swim' ? 'active' : ''}" data-discipline="swim" title="Nur Schwimm-Stunden vergleichen">🏊 Schwimmen</button>
+            <button class="chip hours-discipline-chip ${currentHubHoursDiscipline === 'all' ? 'active' : ''}" data-discipline="all" title="Gesamte Trainingsstunden aller Disziplinen vergleichen">📊 Alle</button>
+          </div>
         </div>
         <div class="chart-wrapper">
           <canvas id="hub-hours-chart"></canvas>
@@ -651,7 +684,7 @@ function renderHubContent(rawUsers) {
     </div>
   `;
 
-  // Discipline-Switcher Listener
+  // Discipline-Switcher Listener (Kilometer-Diagramm)
   document.querySelectorAll(".discipline-chip").forEach((btn) => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".discipline-chip").forEach(b => b.classList.remove("active"));
@@ -660,6 +693,18 @@ function renderHubContent(rawUsers) {
       const titleEl = document.getElementById("hub-discipline-chart-title");
       if (titleEl) titleEl.textContent = getDisciplineChartTitle(currentHubDiscipline, tfInfo.label);
       renderDisciplinesChart(currentHubUsers, currentHubDiscipline);
+    });
+  });
+
+  // Discipline-Switcher Listener (Stunden-Diagramm)
+  document.querySelectorAll(".hours-discipline-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".hours-discipline-chip").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentHubHoursDiscipline = btn.dataset.discipline;
+      const titleEl = document.getElementById("hub-hours-chart-title");
+      if (titleEl) titleEl.textContent = getHoursChartTitle(currentHubHoursDiscipline, tfInfo.label);
+      renderHoursChart(currentHubUsers, currentHubHoursDiscipline);
     });
   });
 
@@ -678,7 +723,22 @@ function getDisciplineChartTitle(discipline, timeframeLabel = "") {
     case "bike": return `Disziplinen-Vergleich: 🚴 Rad${suffix}`;
     case "run":  return `Disziplinen-Vergleich: 🏃 Laufen${suffix}`;
     case "swim": return `Disziplinen-Vergleich: 🏊 Schwimmen${suffix}`;
-    default:     return `Disziplinen-Vergleich: 📊 Alle${suffix}`;
+    default:     return `Disziplinen-Vergleich: 📊 Alle (Gesamt)${suffix}`;
+  }
+}
+
+/**
+ * Gibt den passenden Titel für das Trainingsvolumen-Diagramm (Stunden) inklusive gewähltem Zeitraum zurück.
+ * @param {string} discipline
+ * @param {string} timeframeLabel
+ */
+function getHoursChartTitle(discipline, timeframeLabel = "") {
+  const suffix = timeframeLabel ? ` • ${timeframeLabel}` : "";
+  switch (discipline) {
+    case "bike": return `Trainingsvolumen: 🚴 Rad${suffix}`;
+    case "run":  return `Trainingsvolumen: 🏃 Laufen${suffix}`;
+    case "swim": return `Trainingsvolumen: 🏊 Schwimmen${suffix}`;
+    default:     return `Trainingsvolumen: 📊 Alle (Gesamt)${suffix}`;
   }
 }
 
@@ -691,7 +751,7 @@ function renderHubCharts(users) {
   }
 
   renderDisciplinesChart(users, currentHubDiscipline);
-  renderHoursChart(users);
+  renderHoursChart(users, currentHubHoursDiscipline);
 }
 
 /** Rendert das Disziplinen-Balkendiagramm je nach gewählter Sportart */
@@ -704,10 +764,11 @@ function renderDisciplinesChart(users, discipline = currentHubDiscipline) {
   const ctxDisc = document.getElementById("hub-disciplines-chart")?.getContext("2d");
   if (!ctxDisc || typeof Chart === "undefined") return;
 
-  const labels = users.map(u => u.name || "Athlet");
-  const swimData = users.map(u => (u.currentStats?.swimKm != null ? u.currentStats.swimKm : 0));
-  const bikeData = users.map(u => (u.currentStats?.bikeKm != null ? u.currentStats.bikeKm : 0));
-  const runData  = users.map(u => (u.currentStats?.runKm != null ? u.currentStats.runKm : 0));
+  const labels    = users.map(u => u.name || "Athlet");
+  const swimData  = users.map(u => (u.currentStats?.swimKm != null ? u.currentStats.swimKm : 0));
+  const bikeData  = users.map(u => (u.currentStats?.bikeKm != null ? u.currentStats.bikeKm : 0));
+  const runData   = users.map(u => (u.currentStats?.runKm != null ? u.currentStats.runKm : 0));
+  const totalData = users.map(u => (u.currentStats?.totalKm != null ? u.currentStats.totalKm : 0));
 
   let datasets = [];
   let yAxisTitle = "Kilometer (km)";
@@ -749,33 +810,18 @@ function renderDisciplinesChart(users, discipline = currentHubDiscipline) {
     ];
     yAxisTitle = "Schwimm-Kilometer (km)";
   } else {
-    // "all"
+    // "all" -> Ein einzelner Gesamtbalken pro Athlet
     datasets = [
       {
-        label: "🏊 Schwimmen (km)",
-        data: swimData,
-        backgroundColor: "rgba(59, 130, 246, 0.8)",
-        borderColor: "#3b82f6",
+        label: "📊 Gesamt (km)",
+        data: totalData,
+        backgroundColor: "rgba(232, 57, 30, 0.85)",
+        borderColor: "#e8391e",
         borderWidth: 1,
-        borderRadius: 4,
-      },
-      {
-        label: "🚴 Rad (km)",
-        data: bikeData,
-        backgroundColor: "rgba(249, 115, 22, 0.8)",
-        borderColor: "#f97316",
-        borderWidth: 1,
-        borderRadius: 4,
-      },
-      {
-        label: "🏃 Laufen (km)",
-        data: runData,
-        backgroundColor: "rgba(34, 197, 94, 0.8)",
-        borderColor: "#22c55e",
-        borderWidth: 1,
-        borderRadius: 4,
+        borderRadius: 6,
       }
     ];
+    yAxisTitle = "Gesamt-Kilometer (km)";
   }
 
   disciplinesChartInstance = new Chart(ctxDisc, {
@@ -790,7 +836,7 @@ function renderDisciplinesChart(users, discipline = currentHubDiscipline) {
       animation: { duration: 350 },
       plugins: {
         legend: {
-          display: discipline === "all",
+          display: false,
           labels: { color: "#94a3b8", font: { family: "Inter", size: 12 } }
         },
         tooltip: {
@@ -801,7 +847,7 @@ function renderDisciplinesChart(users, discipline = currentHubDiscipline) {
           borderWidth: 1,
           padding: 10,
           callbacks: {
-            label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} km`
+            label: (ctx) => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(1)} km`
           }
         }
       },
@@ -820,8 +866,8 @@ function renderDisciplinesChart(users, discipline = currentHubDiscipline) {
   });
 }
 
-/** Rendert das Trainingsvolumen (Stunden) Balkendiagramm */
-function renderHoursChart(users) {
+/** Rendert das Trainingsvolumen (Stunden) Balkendiagramm je nach gewählter Sportart */
+function renderHoursChart(users, discipline = currentHubHoursDiscipline) {
   if (hoursChartInstance) {
     hoursChartInstance.destroy();
     hoursChartInstance = null;
@@ -830,29 +876,79 @@ function renderHoursChart(users) {
   const ctxHours = document.getElementById("hub-hours-chart")?.getContext("2d");
   if (!ctxHours || typeof Chart === "undefined") return;
 
-  const labels = users.map(u => u.name || "Athlet");
-  const hoursData = users.map(u => (u.currentStats?.totalHours != null ? u.currentStats.totalHours : 0));
+  const labels         = users.map(u => u.name || "Athlet");
+  const swimHoursData  = users.map(u => (u.currentStats?.swimHours != null ? u.currentStats.swimHours : 0));
+  const bikeHoursData  = users.map(u => (u.currentStats?.bikeHours != null ? u.currentStats.bikeHours : 0));
+  const runHoursData   = users.map(u => (u.currentStats?.runHours != null ? u.currentStats.runHours : 0));
+  const totalHoursData = users.map(u => (u.currentStats?.totalHours != null ? u.currentStats.totalHours : 0));
+
+  let datasets = [];
+  let yAxisTitle = "Stunden (h)";
+
+  if (discipline === "bike") {
+    datasets = [
+      {
+        label: "🚴 Rad (Stunden)",
+        data: bikeHoursData,
+        backgroundColor: "rgba(249, 115, 22, 0.85)",
+        borderColor: "#f97316",
+        borderWidth: 1,
+        borderRadius: 6,
+      }
+    ];
+    yAxisTitle = "Rad-Zeit (Stunden)";
+  } else if (discipline === "run") {
+    datasets = [
+      {
+        label: "🏃 Laufen (Stunden)",
+        data: runHoursData,
+        backgroundColor: "rgba(34, 197, 94, 0.85)",
+        borderColor: "#22c55e",
+        borderWidth: 1,
+        borderRadius: 6,
+      }
+    ];
+    yAxisTitle = "Lauf-Zeit (Stunden)";
+  } else if (discipline === "swim") {
+    datasets = [
+      {
+        label: "🏊 Schwimmen (Stunden)",
+        data: swimHoursData,
+        backgroundColor: "rgba(59, 130, 246, 0.85)",
+        borderColor: "#3b82f6",
+        borderWidth: 1,
+        borderRadius: 6,
+      }
+    ];
+    yAxisTitle = "Schwimm-Zeit (Stunden)";
+  } else {
+    // "all" -> Ein einzelner Gesamtbalken pro Athlet
+    datasets = [
+      {
+        label: "⏱️ Gesamt (Stunden)",
+        data: totalHoursData,
+        backgroundColor: "rgba(232, 57, 30, 0.85)",
+        borderColor: "#e8391e",
+        borderWidth: 1,
+        borderRadius: 6,
+      }
+    ];
+    yAxisTitle = "Gesamte Trainingszeit (Stunden)";
+  }
 
   hoursChartInstance = new Chart(ctxHours, {
     type: "bar",
     data: {
       labels,
-      datasets: [
-        {
-          label: "⏱️ Trainingszeit (Stunden)",
-          data: hoursData,
-          backgroundColor: "rgba(232, 57, 30, 0.85)",
-          borderColor: "#e8391e",
-          borderWidth: 1,
-          borderRadius: 6,
-        }
-      ]
+      datasets
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: { duration: 350 },
       plugins: {
         legend: {
+          display: false,
           labels: { color: "#94a3b8", font: { family: "Inter", size: 12 } }
         },
         tooltip: {
@@ -863,7 +959,7 @@ function renderHoursChart(users) {
           borderWidth: 1,
           padding: 10,
           callbacks: {
-            label: (ctx) => ` ${Number(ctx.parsed.y).toFixed(1)} Stunden`
+            label: (ctx) => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(1)} Std.`
           }
         }
       },
@@ -875,7 +971,7 @@ function renderHoursChart(users) {
         y: {
           ticks: { color: "#94a3b8", font: { family: "Inter" } },
           grid: { color: "rgba(37, 42, 64, 0.4)" },
-          title: { display: true, text: "Stunden", color: "#64748b" }
+          title: { display: true, text: yAxisTitle, color: "#64748b" }
         }
       }
     }

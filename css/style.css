@@ -2319,7 +2319,8 @@ body {
   border:       1px solid rgba(168, 85, 247, 0.35);
 }
 
-.badge-mobility {
+.badge-mobility,
+.badge-fitness {
   background:   rgba(20, 184, 166, 0.15);
   color:        #2dd4bf;
   border:       1px solid rgba(20, 184, 166, 0.35);
@@ -2725,7 +2726,8 @@ body {
   box-shadow:   0 0 16px rgba(168, 85, 247, 0.45);
 }
 
-.discipline-select-btn.active.badge-mobility {
+.discipline-select-btn.active.badge-mobility,
+.discipline-select-btn.active.badge-fitness {
   background:   linear-gradient(135deg, #14b8a6, #0d9488);
   border-color: #14b8a6;
   box-shadow:   0 0 16px rgba(20, 184, 166, 0.45);
@@ -2771,7 +2773,8 @@ body {
 .disc-mini-badge.badge-swim     { background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; color: #60a5fa; }
 .disc-mini-badge.badge-rest     { background: rgba(100, 116, 139, 0.2); border: 1px solid #64748b; color: #94a3b8; }
 .disc-mini-badge.badge-brick    { background: rgba(168, 85, 247, 0.2); border: 1px solid #a855f7; color: #c084fc; }
-.disc-mini-badge.badge-mobility { background: rgba(20, 184, 166, 0.2); border: 1px solid #14b8a6; color: #2dd4bf; }
+.disc-mini-badge.badge-mobility,
+.disc-mini-badge.badge-fitness  { background: rgba(20, 184, 166, 0.2); border: 1px solid #14b8a6; color: #2dd4bf; }
 
 .disc-section-subtitle {
   font-size:  0.75rem;
@@ -2934,7 +2937,8 @@ body {
 .subtype-part-editor-card.disc-border-run      { border-left-color: #22c55e; }
 .subtype-part-editor-card.disc-border-swim     { border-left-color: #3b82f6; }
 .subtype-part-editor-card.disc-border-rest     { border-left-color: #64748b; }
-.subtype-part-editor-card.disc-border-mobility { border-left-color: #14b8a6; }
+.subtype-part-editor-card.disc-border-mobility,
+.subtype-part-editor-card.disc-border-fitness  { border-left-color: #14b8a6; }
 
 .subtype-part-editor-card:hover {
   border-color: rgba(255, 255, 255, 0.16);
@@ -2985,7 +2989,8 @@ body {
   color:        #cbd5e1;
 }
 
-.part-card-badge.badge-mobility {
+.part-card-badge.badge-mobility,
+.part-card-badge.badge-fitness {
   background:   rgba(20, 184, 166, 0.15);
   border-color: rgba(20, 184, 166, 0.4);
   color:        #2dd4bf;

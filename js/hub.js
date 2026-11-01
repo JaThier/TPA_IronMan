@@ -8,6 +8,11 @@ import {
   collection, doc, getDoc, getDocs, setDoc,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast } from "./ui-helpers.js";
+import {
+  DAILY_AUTO_SYNC_DAYS,
+  getTodayDateKey,
+  fetchStravaActivitiesWithTokens,
+} from "./strava.js";
 
 /** Konfiguration der verfügbaren Zeiträume für den fairen Leistungsvergleich */
 export const HUB_TIMEFRAMES = {
@@ -301,6 +306,7 @@ export async function publishUserStatsToHub(activities = [], athlete = null) {
       email:              user.email,
       avatar:             athlete?.athleteProfile || athlete?.profile || null,
       updatedAt:          new Date().toISOString(),
+      lastDailySyncDate:  getTodayDateKey(),
       activities:         simplifiedActivities,
       periods:            periods,
       syncedDays:         syncedDays,
@@ -309,6 +315,17 @@ export async function publishUserStatsToHub(activities = [], athlete = null) {
         totalKm: 0, totalHours: 0, activityCount: 0, swimKm: 0, bikeKm: 0, runKm: 0
       }
     };
+
+    if (athlete?.refreshToken || athlete?.accessToken) {
+      payload.stravaAuth = {
+        accessToken:    athlete.accessToken || null,
+        refreshToken:   athlete.refreshToken || null,
+        expiresAt:      athlete.expiresAt || 0,
+        athleteId:      athlete.athleteId || null,
+        athleteName:    athlete.athleteName || displayName,
+        athleteProfile: athlete.athleteProfile || athlete.profile || null,
+      };
+    }
 
     const ref = doc(db, "hub", user.uid);
     await setDoc(ref, payload, { merge: true });
@@ -508,6 +525,9 @@ export async function loadAndRenderHub(forceToast = false) {
     renderHubContent(cachedHubUsers);
     if (forceToast) showToast("Hub-Statistiken aktualisiert!", "success");
 
+    // Einmal täglich automatisch die Aktivitäten der letzten 6 Monate (180 Tage) aller Athleten synchronisieren
+    syncAllHubAthletesDaily(cachedHubUsers, forceToast);
+
   } catch (err) {
     console.error("[hub] Fehler beim Laden der Hub-Daten:", err);
     if (err.code === "permission-denied") {
@@ -515,6 +535,141 @@ export async function loadAndRenderHub(forceToast = false) {
     } else {
       showToast("Hub-Daten konnten nicht geladen werden.", "error");
     }
+  }
+}
+
+let isHubDailySyncRunning = false;
+
+/**
+ * Synchronisiert einmal pro Tag automatisch die Strava-Aktivitäten der letzten 6 Monate (180 Tage)
+ * für alle im Hub registrierten Athleten, sofern deren heutiger Sync noch aussteht.
+ * @param {Array} usersList
+ * @param {boolean} forceSync
+ */
+async function syncAllHubAthletesDaily(usersList, forceSync = false) {
+  if (isHubDailySyncRunning || !Array.isArray(usersList) || usersList.length === 0) return;
+  isHubDailySyncRunning = true;
+
+  const todayKey = getTodayDateKey();
+  let anyUpdated = false;
+
+  try {
+    await Promise.allSettled(
+      usersList.map(async (u) => {
+        if (!u?.uid) return;
+
+        const localSyncKey = `tpa_hub_daily_sync_${u.uid}`;
+        let localSyncedToday = false;
+        try {
+          localSyncedToday = localStorage.getItem(localSyncKey) === todayKey;
+        } catch (_) {}
+
+        const alreadySyncedToday =
+          !forceSync &&
+          ((u.lastDailySyncDate === todayKey && (u.syncedDays || 0) >= 150) || localSyncedToday);
+
+        if (alreadySyncedToday) return;
+
+        // 1. Strava-Tokens des Athleten ermitteln (aus Hub-Dokument oder /users/{uid}/profile/strava)
+        let tokens = u.stravaAuth || null;
+        if (!tokens || (!tokens.refreshToken && !tokens.accessToken)) {
+          try {
+            const stravaRef = doc(db, "users", u.uid, "profile", "strava");
+            const stravaSnap = await getDoc(stravaRef);
+            if (stravaSnap.exists()) {
+              tokens = stravaSnap.data();
+            }
+          } catch (_) {
+            // Zugriff auf fremde /users/{uid}/profile/strava Dokumente ggf. durch Firestore-Regeln geschützt
+          }
+        }
+
+        if (!tokens || (!tokens.refreshToken && !tokens.accessToken)) return;
+
+        // 2. Aktivitäten der letzten 6 Monate (180 Tage) von Strava abrufen
+        const result = await fetchStravaActivitiesWithTokens(tokens, DAILY_AUTO_SYNC_DAYS);
+        const rawActs = result.activities || [];
+        const updatedTokens = result.tokens || tokens;
+
+        const now = Date.now();
+        const periods = {};
+        for (const [tfId, tf] of Object.entries(HUB_TIMEFRAMES)) {
+          periods[tfId] = computeStatsForTimeframe(rawActs, tf.days);
+        }
+
+        const timestamps = rawActs
+          .map(a => {
+            const raw = a.start_date || a.start_date_local || a.date;
+            if (!raw) return 0;
+            return typeof raw === "number" ? (raw < 1e11 ? raw * 1000 : raw) : new Date(raw).getTime();
+          })
+          .filter(t => !isNaN(t) && t > 0);
+        const oldestTimestamp = timestamps.length > 0 ? Math.min(...timestamps) : null;
+        const syncedDays = oldestTimestamp ? Math.max(1, Math.round((now - oldestTimestamp) / (24 * 3600 * 1000))) : DAILY_AUTO_SYNC_DAYS;
+
+        const simplifiedActivities = rawActs.map(a => ({
+          id:          a.id || null,
+          name:        a.name || "",
+          type:        a.type || a.sport_type || "Other",
+          distance:    parseFloat(a.distance) || 0,
+          moving_time: parseFloat(a.moving_time) || 0,
+          start_date:  a.start_date || a.start_date_local || "",
+        }));
+
+        // In-Memory-Eintrag des Athleten aktualisieren
+        u.activities         = simplifiedActivities;
+        u.periods            = periods;
+        u.stats              = periods["30d"] || u.stats;
+        u.syncedDays         = Math.max(syncedDays, u.syncedDays || 0);
+        u.lastDailySyncDate  = todayKey;
+        u.updatedAt          = new Date().toISOString();
+        u.stravaAuth         = {
+          accessToken:    updatedTokens.accessToken || null,
+          refreshToken:   updatedTokens.refreshToken || null,
+          expiresAt:      updatedTokens.expiresAt || 0,
+          athleteId:      updatedTokens.athleteId || null,
+          athleteName:    updatedTokens.athleteName || u.name || "Athlet",
+          athleteProfile: updatedTokens.athleteProfile || u.avatar || null,
+        };
+
+        try {
+          localStorage.setItem(localSyncKey, todayKey);
+        } catch (_) {}
+
+        anyUpdated = true;
+        console.log(`[hub] Täglicher 6-Monate-Sync für ${u.name || u.uid} erfolgreich (${simplifiedActivities.length} Aktivitäten).`);
+
+        // 3. In Firestore (/hub/{uid}) persistieren (falls Berechtigung vorliegt)
+        try {
+          const hubDocRef = doc(db, "hub", u.uid);
+          await setDoc(hubDocRef, {
+            uid:                u.uid,
+            name:               u.name || "Athlet",
+            email:              u.email || null,
+            avatar:             u.avatar || null,
+            updatedAt:          u.updatedAt,
+            lastDailySyncDate:  todayKey,
+            activities:         simplifiedActivities,
+            periods:            periods,
+            syncedDays:         u.syncedDays,
+            oldestActivityDate: oldestTimestamp ? new Date(oldestTimestamp).toISOString() : null,
+            stats:              u.stats,
+            stravaAuth:         u.stravaAuth,
+          }, { merge: true });
+        } catch (_) {
+          // Falls Firestore-Regeln nur das Schreiben des eigenen Hub-Dokuments erlauben, bleiben die Daten im Speicher aktiv
+        }
+      })
+    );
+
+    if (anyUpdated) {
+      const hubContent = document.getElementById("hub-content");
+      if (hubContent && !hubContent.querySelector(".spinner")) {
+        renderHubContent(cachedHubUsers);
+      }
+    }
+  } finally {
+    isHubDailySyncRunning = false;
   }
 }
 

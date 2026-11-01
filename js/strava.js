@@ -15,6 +15,16 @@ import { publishUserStatsToHub } from "./hub.js";
 const STRAVA_REDIRECT_URI = window.location.origin + window.location.pathname;
 const STRAVA_SCOPE = "read,activity:read";
 const STRAVA_API_BASE = "https://www.strava.com/api/v3";
+export const DAILY_AUTO_SYNC_DAYS = 180; // 6 Monate (180 Tage)
+
+/** Liefert das heutige Datum als YYYY-MM-DD Schlüssel (lokale Zeitzone) */
+export function getTodayDateKey() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 /** Gibt die Strava-Config mit Secrets zurück (nach loadSecrets()). */
 function getStravaConfig() {
@@ -35,8 +45,9 @@ let filteredActivities = [];
 let selectedActivityId = null;
 let currentFilterSport = "all";
 let currentSearchQuery = "";
-let syncDaysSetting = 30; // Standard: 30 Tage
+let syncDaysSetting = DAILY_AUTO_SYNC_DAYS; // Standard: 6 Monate (180 Tage)
 let detailChartInstance = null;
+let dailySyncIntervalId = null;
 const activitySpeedProfileCache = new Map(); // id -> Array<{ min: number, kmh: number | null, watts: number | null, hr: number | null }> | null
 
 // ── Hilfsfunktion: Sortierung nach Datum (neueste zuerst) ──
@@ -89,24 +100,57 @@ export async function initStrava(user) {
   await loadStravaTokens();
 
   if (stravaTokens?.accessToken) {
-    // Vorhandene gecachte Aktivitäten laden oder frisch abrufen
-    const cached = await loadCachedActivities();
+    // Vorhandene gecachte Aktivitäten inkl. Metadaten laden
+    const cachedMeta = await loadCachedActivitiesMeta();
+    const cached = cachedMeta.data || [];
+    const todayKey = getTodayDateKey();
+    const isDailySyncDue =
+      cachedMeta.lastDailySyncDate !== todayKey ||
+      (cachedMeta.syncDays || 0) < DAILY_AUTO_SYNC_DAYS ||
+      cached.length === 0;
+
     if (cached.length > 0) {
       allActivities = sortActivitiesDesc(cached);
       window.stravaActivities = allActivities;
       window.stravaTokens = stravaTokens;
       selectedActivityId = allActivities[0]?.id || null;
       renderActivitiesView();
-      // Im Hintergrund Hub synchronisieren
-      await publishUserStatsToHub(allActivities, stravaTokens);
+      // Im Hintergrund Hub synchronisieren (nur als heute frisch synchronisiert markieren, wenn bereits erledigt)
+      await publishUserStatsToHub(allActivities, stravaTokens, { markDailySynced: !isDailySyncDue });
       // KI-Vorschau im Trainingsplan aktualisieren
       window.updateAiPreview?.();
+
+      // Falls heute noch kein automatischer 6-Monate-Sync stattfand, im Hintergrund nachholen
+      if (isDailySyncDue) {
+        console.log(`[strava] Täglicher Auto-Sync (${DAILY_AUTO_SYNC_DAYS} Tage / 6 Monate) wird im Hintergrund ausgeführt…`);
+        await fetchAndDisplayActivities(DAILY_AUTO_SYNC_DAYS, { silentLoading: true, isAutoDailySync: true });
+      }
     } else {
-      await fetchAndDisplayActivities(syncDaysSetting);
+      await fetchAndDisplayActivities(DAILY_AUTO_SYNC_DAYS, { isAutoDailySync: true });
     }
+
+    startDailyAutoSyncTimer();
   } else {
     showConnectButton();
   }
+}
+
+/**
+ * Prüft regelmäßig im Hintergrund (während die App geöffnet bleibt),
+ * ob ein neuer Kalendertag angebrochen ist und stößt einmal täglich den 6-Monate-Sync an.
+ */
+function startDailyAutoSyncTimer() {
+  if (dailySyncIntervalId) clearInterval(dailySyncIntervalId);
+  dailySyncIntervalId = setInterval(async () => {
+    if (!currentUser || !stravaTokens?.accessToken) return;
+    const cachedMeta = await loadCachedActivitiesMeta();
+    const todayKey = getTodayDateKey();
+    if (cachedMeta.lastDailySyncDate !== todayKey || (cachedMeta.syncDays || 0) < DAILY_AUTO_SYNC_DAYS) {
+      console.log("[strava] Neuer Tag erkannt – starte automatischen täglichen 6-Monate-Sync…");
+      await fetchAndDisplayActivities(DAILY_AUTO_SYNC_DAYS, { silentLoading: true, isAutoDailySync: true });
+      window.refreshHub?.();
+    }
+  }, 30 * 60 * 1000); // Alle 30 Minuten prüfen
 }
 
 // ── OAuth Flow ─────────────────────────────────────────────
@@ -221,63 +265,127 @@ async function getValidAccessToken() {
   return stravaTokens.accessToken;
 }
 
+/**
+ * Erneuert bei Bedarf ein übergebenes Strava-Token-Objekt und lädt die Aktivitäten
+ * der letzten `days` Tage von der Strava API (wird sowohl für den eigenen Account als auch
+ * für den täglichen Team-Auto-Sync im Hub genutzt).
+ * @param {Object} tokenObj
+ * @param {number} days
+ * @returns {Promise<{ activities: Array, tokens: Object, tokenRefreshed: boolean }>}
+ */
+export async function fetchStravaActivitiesWithTokens(tokenObj, days = DAILY_AUTO_SYNC_DAYS) {
+  if (!tokenObj || (!tokenObj.accessToken && !tokenObj.refreshToken)) {
+    throw new Error("Keine gültigen Strava-Tokens vorhanden");
+  }
+
+  const updatedTokens = { ...tokenObj };
+  let tokenRefreshed = false;
+  const now = Math.floor(Date.now() / 1000);
+
+  if (!updatedTokens.accessToken || (updatedTokens.expiresAt || 0) <= now + 300) {
+    if (!updatedTokens.refreshToken) {
+      throw new Error("Strava Refresh-Token fehlt");
+    }
+    const cfg = getStravaConfig();
+    const response = await fetch("https://www.strava.com/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: cfg.clientId,
+        client_secret: cfg.clientSecret,
+        grant_type: "refresh_token",
+        refresh_token: updatedTokens.refreshToken,
+      }),
+    });
+
+    if (!response.ok) throw new Error(`Strava Token-Refresh fehlgeschlagen (${response.status})`);
+    const data = await response.json();
+    updatedTokens.accessToken = data.access_token;
+    updatedTokens.refreshToken = data.refresh_token || updatedTokens.refreshToken;
+    updatedTokens.expiresAt = data.expires_at;
+    tokenRefreshed = true;
+  }
+
+  const afterEpoch = Math.floor(Date.now() / 1000) - (days * 24 * 3600);
+  let fetched = [];
+  let page = 1;
+  let hasMore = true;
+
+  // Paginierung: Bis zu 5 Seiten à 100 Aktivitäten (500 Einheiten) für volle 6 Monate Abdeckung
+  while (hasMore && page <= 5) {
+    const url = `${STRAVA_API_BASE}/athlete/activities?after=${afterEpoch}&per_page=100&page=${page}`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${updatedTokens.accessToken}` }
+    });
+
+    if (!response.ok) throw new Error(`Strava API Fehler: ${response.status}`);
+    const pageActs = await response.json();
+
+    if (Array.isArray(pageActs) && pageActs.length > 0) {
+      fetched = fetched.concat(pageActs);
+      if (pageActs.length < 100) hasMore = false;
+      page++;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  return {
+    activities: sortActivitiesDesc(fetched),
+    tokens: updatedTokens,
+    tokenRefreshed,
+  };
+}
+
 // ── Aktivitäten abrufen mit konfigurierbarem Zeitraum ──────
 /**
  * Ruft Aktivitäten von Strava ab, die nicht älter als `days` Tage sind.
  * @param {number} days Anzahl Tage in die Vergangenheit
+ * @param {Object} options Optionale Flags ({ silentLoading, isAutoDailySync })
  */
-export async function fetchAndDisplayActivities(days = syncDaysSetting) {
-  syncDaysSetting = parseInt(days, 10) || 30;
-  showStravaLoading(`Synchronisiere Aktivitäten der letzten ${syncDaysSetting} Tage…`);
+export async function fetchAndDisplayActivities(days = syncDaysSetting, options = {}) {
+  syncDaysSetting = parseInt(days, 10) || DAILY_AUTO_SYNC_DAYS;
+  const { silentLoading = false, isAutoDailySync = false } = options;
+
+  if (!silentLoading) {
+    showStravaLoading(`Synchronisiere Aktivitäten der letzten ${syncDaysSetting} Tage…`);
+  }
 
   try {
-    const token = await getValidAccessToken();
-    const afterEpoch = Math.floor(Date.now() / 1000) - (syncDaysSetting * 24 * 3600);
-
-    let fetched = [];
-    let page = 1;
-    let hasMore = true;
-
-    // Paginierung: Bis zu 200 Aktivitäten laden
-    while (hasMore && page <= 2) {
-      const url = `${STRAVA_API_BASE}/athlete/activities?after=${afterEpoch}&per_page=100&page=${page}`;
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      if (!response.ok) throw new Error(`Strava API Fehler: ${response.status}`);
-      const pageActs = await response.json();
-
-      if (Array.isArray(pageActs) && pageActs.length > 0) {
-        fetched = fetched.concat(pageActs);
-        if (pageActs.length < 100) hasMore = false;
-        page++;
-      } else {
-        hasMore = false;
-      }
+    const result = await fetchStravaActivitiesWithTokens(stravaTokens, syncDaysSetting);
+    stravaTokens = result.tokens;
+    if (result.tokenRefreshed) {
+      await saveStravaTokens(stravaTokens);
     }
 
-    allActivities = sortActivitiesDesc(fetched);
+    allActivities = result.activities;
     window.stravaActivities = allActivities;
     window.stravaTokens = stravaTokens;
-    if (allActivities.length > 0) {
+    if (allActivities.length > 0 && !selectedActivityId) {
       selectedActivityId = allActivities[0].id;
     }
 
-    // In Firestore cachen
-    await cacheActivities(allActivities);
+    // In Firestore cachen (inkl. Tagesstempel für den täglichen 6-Monate-Sync)
+    const isFullSixMonthSync = syncDaysSetting >= DAILY_AUTO_SYNC_DAYS;
+    await cacheActivities(allActivities, isFullSixMonthSync);
 
     // Eigene Stats für den Hub aktualisieren
-    await publishUserStatsToHub(allActivities, stravaTokens);
+    await publishUserStatsToHub(allActivities, stravaTokens, { markDailySynced: isFullSixMonthSync });
 
-    showToast(`✅ ${allActivities.length} Aktivitäten synchronisiert!`, "success");
+    if (!isAutoDailySync) {
+      showToast(`✅ ${allActivities.length} Aktivitäten (${syncDaysSetting} Tage) synchronisiert!`, "success");
+    } else {
+      console.log(`[strava] Täglicher 6-Monate-Sync abgeschlossen: ${allActivities.length} Aktivitäten geladen.`);
+    }
     renderActivitiesView();
     // KI-Vorschau im Trainingsplan aktualisieren
     window.updateAiPreview?.();
 
   } catch (err) {
     console.error("Fehler beim Laden der Aktivitäten:", err);
-    showToast(`Synchronisation fehlgeschlagen: ${err.message}`, "error");
+    if (!silentLoading) {
+      showToast(`Synchronisation fehlgeschlagen: ${err.message}`, "error");
+    }
     if (allActivities.length === 0) {
       showConnectButton();
     } else {
@@ -286,26 +394,41 @@ export async function fetchAndDisplayActivities(days = syncDaysSetting) {
   }
 }
 
-async function cacheActivities(activities) {
+async function cacheActivities(activities, markDailySynced = false) {
   const ref = doc(db, "users", currentUser.uid, "cache", "activities");
-  await setDoc(ref, {
+  const payload = {
     data: activities,
     updatedAt: new Date().toISOString(),
     syncDays: syncDaysSetting,
-  });
+  };
+  if (markDailySynced || syncDaysSetting >= DAILY_AUTO_SYNC_DAYS) {
+    payload.lastDailySyncDate = getTodayDateKey();
+  }
+  await setDoc(ref, payload, { merge: true });
 }
 
-async function loadCachedActivities() {
+async function loadCachedActivitiesMeta() {
   try {
     const ref = doc(db, "users", currentUser.uid, "cache", "activities");
     const snap = await getDoc(ref);
     if (snap.exists()) {
-      return snap.data().data || [];
+      const d = snap.data() || {};
+      return {
+        data: Array.isArray(d.data) ? d.data : [],
+        updatedAt: d.updatedAt || null,
+        syncDays: d.syncDays || 0,
+        lastDailySyncDate: d.lastDailySyncDate || null,
+      };
     }
   } catch (err) {
     console.error("Fehler beim Laden der Cache-Aktivitäten:", err);
   }
-  return [];
+  return { data: [], updatedAt: null, syncDays: 0, lastDailySyncDate: null };
+}
+
+async function loadCachedActivities() {
+  const meta = await loadCachedActivitiesMeta();
+  return meta.data;
 }
 
 // ── Sport-Typ Erkennung ────────────────────────────────────
@@ -1152,7 +1275,7 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
       pointRadius: hasDetailedPrimary ? 2 : 0,
       pointHoverRadius: 5,
       tension: hasDetailedPrimary ? 0.3 : 0,
-      fill: true,
+      fill: runMode ? "start" : true,
       unit: primaryUnit,
     });
   }
@@ -1239,6 +1362,7 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
       type: "linear",
       position: "left",
       display: allPrimaryVals.length > 0,
+      reverse: runMode,
       title: {
         display: true,
         text: bikeMode ? "Leistung (Watt)" : (runMode ? "Pace (min/km)" : "Geschwindigkeit (km/h)"),

@@ -346,16 +346,19 @@ export const PLAN_DISCIPLINES = {
       { id: "ruhe", label: "Komplette Erholung", icon: "🛏️" },
     ]
   },
-  mobility: {
-    id: "mobility",
-    label: "Mobility & Stretching",
-    fullLabel: "Stretching & Mobilität",
-    icon: "🧘",
-    badgeClass: "badge-mobility",
+  fitness: {
+    id: "fitness",
+    label: "Fitness",
+    fullLabel: "Fitness",
+    icon: "🏋️",
+    badgeClass: "badge-fitness",
     speedPlaceholder: "–",
     isRest: false,
     onlyDuration: true,
-    subtypes: []
+    subtypes: [
+      { id: "mobility", label: "Mobility & Stretching", icon: "🧘" },
+      { id: "gym",      label: "Gym",                   icon: "💪" },
+    ]
   },
   swim: {
     id: "swim",
@@ -407,18 +410,18 @@ const IRONMAN_TEMPLATE = {
   weekPlan: {
     monday: {
       type: "rest",
-      disciplines: ["rest", "mobility"],
-      subtypes: ["ruhe"],
-      subtypesByDisc: { rest: ["ruhe"], mobility: [] },
+      disciplines: ["rest", "fitness"],
+      subtypes: ["ruhe", "mobility"],
+      subtypesByDisc: { rest: ["ruhe"], fitness: ["mobility"] },
       parts: [
         { discId: "rest", id: "ruhe", label: "Ruhetag: Komplette Erholung", icon: "🛏️", duration: 0, distance: null, speed: "", intensity: "easy" },
-        { discId: "mobility", id: "default", label: "Stretching & Mobilität", icon: "🧘", duration: 20, distance: null, speed: "", intensity: "easy" }
+        { discId: "fitness", id: "mobility", label: "Fitness: Mobility & Stretching", icon: "🧘", duration: 20, distance: null, speed: "", intensity: "easy" }
       ],
       duration: 20,
       distance: null,
       speed: "",
       intensity: "easy",
-      description: "Ruhetag + Stretching & Mobilität",
+      description: "Ruhetag + Fitness (Mobility & Stretching)",
       notes: "Aktive Erholung, 20 Min. Dehnen und Faszienrolle für Beine und Rücken."
     },
     tuesday: {
@@ -623,12 +626,14 @@ function renderAccountPlanView(plan) {
       const dayConf = PLAN_WEEKDAY_CONFIG[dayKey];
       const day = week[dayKey] || { type: "rest", duration: 0, description: "Ruhetag", intensity: "easy" };
 
-      // Multi-Disziplinen ermitteln
-      const disciplines = Array.isArray(day.disciplines) && day.disciplines.length > 0
-        ? day.disciplines.filter(d => PLAN_DISCIPLINES[d])
-        : (day.type === "brick" ? ["ride", "run"] : [day.type || "rest"]);
+      // Multi-Disziplinen ermitteln (inkl. Migration von 'mobility' -> 'fitness')
+      const rawDiscs = Array.isArray(day.disciplines) && day.disciplines.length > 0
+        ? day.disciplines.map(d => d === "mobility" ? "fitness" : d)
+        : (day.type === "brick" ? ["ride", "run"] : [day.type === "mobility" ? "fitness" : (day.type || "rest")]);
+      const disciplines = Array.from(new Set(rawDiscs.filter(d => PLAN_DISCIPLINES[d])));
+      if (disciplines.length === 0) disciplines.push("rest");
 
-      const sportDiscs = disciplines.filter(d => d !== "rest" && d !== "mobility");
+      const sportDiscs = disciplines.filter(d => d !== "rest" && d !== "fitness");
       const isRest = sportDiscs.length === 0 && disciplines.includes("rest");
       const isMulti = disciplines.length > 1;
 
@@ -639,7 +644,7 @@ function renderAccountPlanView(plan) {
       let badgeHtml = "";
       if (isMulti) {
         const discLabels = disciplines.map(d => PLAN_DISCIPLINES[d]?.label || d).join(" + ");
-        const multiBadgeClass = sportDiscs.length > 1 ? "badge-brick" : (disciplines.includes("mobility") && isRest ? "badge-mobility" : (PLAN_DISCIPLINES[sportDiscs[0]]?.badgeClass || "badge-brick"));
+        const multiBadgeClass = sportDiscs.length > 1 ? "badge-brick" : (disciplines.includes("fitness") && isRest ? "badge-fitness" : (PLAN_DISCIPLINES[sportDiscs[0]]?.badgeClass || "badge-brick"));
         badgeHtml = `<span class="day-badge ${multiBadgeClass}">${escapeHtml(discLabels.toUpperCase())}</span>`;
       } else {
         const singleDisc = PLAN_DISCIPLINES[disciplines[0]] || PLAN_DISCIPLINES.rest;
@@ -741,21 +746,23 @@ function initEditorDayFromPlanDay(tpl) {
     };
   }
 
-  // 1. Disziplinen ermitteln
+  // 1. Disziplinen ermitteln (inkl. Migration von 'mobility' -> 'fitness')
   let disciplines = [];
   if (Array.isArray(tpl.disciplines) && tpl.disciplines.length > 0) {
-    disciplines = tpl.disciplines.filter(d => PLAN_DISCIPLINES[d]);
+    disciplines = Array.from(new Set(tpl.disciplines.map(d => d === "mobility" ? "fitness" : d).filter(d => PLAN_DISCIPLINES[d])));
   } else if (tpl.type === "brick") {
     if (Array.isArray(tpl.parts) && tpl.parts.some(p => p.discId)) {
       const set = new Set();
-      tpl.parts.forEach(p => { if (p.discId && PLAN_DISCIPLINES[p.discId]) set.add(p.discId); });
+      tpl.parts.forEach(p => {
+        const dId = p.discId === "mobility" ? "fitness" : p.discId;
+        if (dId && PLAN_DISCIPLINES[dId]) set.add(dId);
+      });
       disciplines = Array.from(set);
     }
     if (disciplines.length === 0) disciplines = ["ride", "run"];
-  } else if (tpl.type && PLAN_DISCIPLINES[tpl.type]) {
-    disciplines = [tpl.type];
-  } else {
-    disciplines = ["rest"];
+  } else if (tpl.type) {
+    const mappedType = tpl.type === "mobility" ? "fitness" : tpl.type;
+    if (PLAN_DISCIPLINES[mappedType]) disciplines = [mappedType];
   }
   if (disciplines.length === 0) disciplines = ["rest"];
 
@@ -767,17 +774,20 @@ function initEditorDayFromPlanDay(tpl) {
   if (Array.isArray(tpl.parts) && tpl.parts.length > 0) {
     for (const p of tpl.parts) {
       if (p && p.id) {
-        let discId = p.discId;
-        // Legacy-Migration: früher war mobility/blackroll ein Subtype von rest
-        if (p.id === "mobility" || p.id === "blackroll" || p.discId === "mobility") {
-          discId = "mobility";
-          if (!disciplines.includes("mobility")) disciplines.push("mobility");
-          if (!subtypesByDisc.mobility) subtypesByDisc.mobility = [];
-          partsObj["mobility_default"] = {
-            duration: typeof p.duration === "number" ? p.duration : 20,
+        let discId = p.discId === "mobility" ? "fitness" : p.discId;
+        let subId = p.id;
+        // Legacy-Migration: früher war mobility/blackroll ein Subtype von rest oder discId='mobility' mit id='default'
+        if (p.id === "mobility" || p.id === "blackroll" || p.discId === "mobility" || p.id === "gym") {
+          discId = "fitness";
+          subId = p.id === "gym" ? "gym" : "mobility";
+          if (!disciplines.includes("fitness")) disciplines.push("fitness");
+          if (!subtypesByDisc.fitness) subtypesByDisc.fitness = [];
+          if (!subtypesByDisc.fitness.includes(subId)) subtypesByDisc.fitness.push(subId);
+          partsObj[`fitness_${subId}`] = {
+            duration: typeof p.duration === "number" ? p.duration : (subId === "gym" ? 45 : 20),
             distance: "",
             speed: "",
-            intensity: "easy"
+            intensity: subId === "gym" ? "moderate" : "easy"
           };
           continue;
         }
@@ -792,9 +802,9 @@ function initEditorDayFromPlanDay(tpl) {
         if (!discId) discId = disciplines[0] || "ride";
 
         if (!subtypesByDisc[discId]) subtypesByDisc[discId] = [];
-        if (!subtypesByDisc[discId].includes(p.id)) subtypesByDisc[discId].push(p.id);
+        if (!subtypesByDisc[discId].includes(subId)) subtypesByDisc[discId].push(subId);
 
-        const pKey = `${discId}_${p.id}`;
+        const pKey = `${discId}_${subId}`;
         partsObj[pKey] = {
           duration: typeof p.duration === "number" ? p.duration : (discId === "rest" ? 0 : 30),
           distance: p.distance != null ? p.distance : "",
@@ -807,23 +817,35 @@ function initEditorDayFromPlanDay(tpl) {
 
   // Falls in tpl.subtypesByDisc oder tpl.subtypes noch Einträge vorhanden waren
   if (tpl.subtypesByDisc && typeof tpl.subtypesByDisc === "object") {
-    for (const [d, list] of Object.entries(tpl.subtypesByDisc)) {
-      if (Array.isArray(list) && (list.includes("mobility") || list.includes("blackroll"))) {
-        if (!disciplines.includes("mobility")) disciplines.push("mobility");
-        if (!subtypesByDisc.mobility) subtypesByDisc.mobility = [];
+    for (const [rawD, list] of Object.entries(tpl.subtypesByDisc)) {
+      const d = rawD === "mobility" ? "fitness" : rawD;
+      if (Array.isArray(list) && (list.includes("mobility") || list.includes("blackroll") || list.includes("gym"))) {
+        if (!disciplines.includes("fitness")) disciplines.push("fitness");
+        if (!subtypesByDisc.fitness) subtypesByDisc.fitness = [];
+        list.forEach(st => {
+          if (st === "mobility" || st === "blackroll") {
+            if (!subtypesByDisc.fitness.includes("mobility")) subtypesByDisc.fitness.push("mobility");
+          } else if (st === "gym") {
+            if (!subtypesByDisc.fitness.includes("gym")) subtypesByDisc.fitness.push("gym");
+          }
+        });
       }
-      if (disciplines.includes(d) && Array.isArray(list) && d !== "mobility") {
+      if (disciplines.includes(d) && Array.isArray(list)) {
         list.forEach(stId => {
-          if (stId === "mobility" || stId === "blackroll") return;
-          if (!subtypesByDisc[d].includes(stId)) subtypesByDisc[d].push(stId);
+          if (d !== "fitness" && (stId === "mobility" || stId === "blackroll")) return;
+          if (PLAN_DISCIPLINES[d]?.subtypes.some(s => s.id === stId) && !subtypesByDisc[d].includes(stId)) {
+            subtypesByDisc[d].push(stId);
+          }
         });
       }
     }
   } else if (Array.isArray(tpl.subtypes)) {
     for (const stId of tpl.subtypes) {
-      if (stId === "mobility" || stId === "blackroll") {
-        if (!disciplines.includes("mobility")) disciplines.push("mobility");
-        if (!subtypesByDisc.mobility) subtypesByDisc.mobility = [];
+      if (stId === "mobility" || stId === "blackroll" || stId === "gym") {
+        const mappedSt = stId === "gym" ? "gym" : "mobility";
+        if (!disciplines.includes("fitness")) disciplines.push("fitness");
+        if (!subtypesByDisc.fitness) subtypesByDisc.fitness = [];
+        if (!subtypesByDisc.fitness.includes(mappedSt)) subtypesByDisc.fitness.push(mappedSt);
         continue;
       }
       for (const d of disciplines) {
@@ -836,18 +858,6 @@ function initEditorDayFromPlanDay(tpl) {
 
   // Fehlende Parts mit Defaults auffüllen
   for (const d of disciplines) {
-    if (d === "mobility") {
-      subtypesByDisc.mobility = [];
-      if (!partsObj["mobility_default"]) {
-        partsObj["mobility_default"] = {
-          duration: 20,
-          distance: "",
-          speed: "",
-          intensity: "easy"
-        };
-      }
-      continue;
-    }
     if (!subtypesByDisc[d] || subtypesByDisc[d].length === 0) {
       const defSt = PLAN_DISCIPLINES[d]?.subtypes[0]?.id || "ruhe";
       subtypesByDisc[d] = [defSt];
@@ -858,8 +868,9 @@ function initEditorDayFromPlanDay(tpl) {
         let defInt = "moderate";
         if (stId.includes("intervalle") || stId.includes("schwelle") || stId.includes("race")) defInt = "hard";
         if (stId.includes("ruhe") || stId.includes("mobility") || stId.includes("zone2")) defInt = "easy";
+        const defDur = d === "rest" ? 0 : (d === "fitness" ? (stId === "gym" ? 45 : 20) : 30);
         partsObj[pKey] = {
-          duration: typeof tpl.duration === "number" && disciplines.length === 1 && subtypesByDisc[d].length === 1 ? tpl.duration : (d === "rest" ? 0 : 30),
+          duration: typeof tpl.duration === "number" && disciplines.length === 1 && subtypesByDisc[d].length === 1 ? tpl.duration : defDur,
           distance: disciplines.length === 1 && subtypesByDisc[d].length === 1 && tpl.distance != null ? tpl.distance : "",
           speed: disciplines.length === 1 && subtypesByDisc[d].length === 1 && tpl.speed ? tpl.speed : "",
           intensity: disciplines.length === 1 && subtypesByDisc[d].length === 1 && tpl.intensity ? tpl.intensity : defInt
@@ -938,7 +949,7 @@ function renderDayEditorCard(dayKey) {
   let headerBadgeHtml = "";
   if (isMulti) {
     const labelStr = disciplines.map(d => PLAN_DISCIPLINES[d]?.label || d).join(" + ");
-    const sportDiscs = disciplines.filter(d => d !== "rest" && d !== "mobility");
+    const sportDiscs = disciplines.filter(d => d !== "rest" && d !== "fitness");
     headerBadgeHtml = sportDiscs.length > 1
       ? `<span class="day-current-type-badge badge-brick">🔄 ${escapeHtml(labelStr)} (Koppel)</span>`
       : `<span class="day-current-type-badge ${(PLAN_DISCIPLINES[sportDiscs[0] || disciplines[0]] || PLAN_DISCIPLINES.rest).badgeClass}">${(PLAN_DISCIPLINES[sportDiscs[0] || disciplines[0]] || PLAN_DISCIPLINES.rest).icon} ${escapeHtml(labelStr)}</span>`;
@@ -964,7 +975,7 @@ function renderDayEditorCard(dayKey) {
   const discSubtypesSectionsHtml = disciplines
     .filter(discId => {
       const disc = PLAN_DISCIPLINES[discId];
-      return disc && Array.isArray(disc.subtypes) && disc.subtypes.length > 0 && !disc.onlyDuration;
+      return disc && Array.isArray(disc.subtypes) && disc.subtypes.length > 0;
     })
     .map(discId => {
       const disc = PLAN_DISCIPLINES[discId] || PLAN_DISCIPLINES.rest;
@@ -1000,97 +1011,86 @@ function renderDayEditorCard(dayKey) {
     const disc = PLAN_DISCIPLINES[discId] || PLAN_DISCIPLINES.rest;
     const selectedSubs = (state.subtypesByDisc && state.subtypesByDisc[discId]) || [];
 
-    if (disc.onlyDuration) {
-      // Für Mobility & Stretching lässt sich einfach nur die Zeit einstellen
+    if (selectedSubs.length === 0) {
       const pKey = `${discId}_default`;
       if (!state.parts) state.parts = {};
       if (!state.parts[pKey]) {
         state.parts[pKey] = {
-          duration: 20,
+          duration: disc.isRest ? 0 : (disc.onlyDuration ? 20 : 30),
           distance: "",
           speed: "",
-          intensity: "easy"
+          intensity: disc.isRest ? "easy" : (disc.onlyDuration ? "easy" : "moderate")
         };
       }
       const p = state.parts[pKey];
 
-      settingsCards.push(`
-        <div class="subtype-part-editor-card disc-border-${discId}">
-          <div class="subtype-part-card-header">
-            <span class="part-card-badge ${disc.badgeClass}">
-              <span class="part-card-icon">${disc.icon}</span>
-              <span class="part-card-label">${disc.fullLabel}</span>
-            </span>
-            <span class="part-card-hint">Zeitdauer für ${disc.fullLabel}</span>
-          </div>
+      if (disc.onlyDuration) {
+        settingsCards.push(`
+          <div class="subtype-part-editor-card disc-border-${discId}">
+            <div class="subtype-part-card-header">
+              <span class="part-card-badge ${disc.badgeClass}">
+                <span class="part-card-icon">${disc.icon}</span>
+                <span class="part-card-label">${disc.fullLabel}</span>
+              </span>
+              <span class="part-card-hint">Zeitdauer für ${disc.fullLabel}</span>
+            </div>
 
-          <div class="day-settings-grid" style="grid-template-columns: minmax(180px, 280px);">
-            <div class="form-group-sm">
-              <label for="input-dur-${dayKey}-${discId}-default">⏱️ Dauer (Min.)</label>
-              <input type="number" id="input-dur-${dayKey}-${discId}-default" class="plan-input part-input-duration"
-                data-day="${dayKey}" data-disc="${discId}" data-subtype="default" min="0" max="300" step="5"
-                value="${p.duration != null ? p.duration : 20}" placeholder="20" />
+            <div class="day-settings-grid" style="grid-template-columns: minmax(180px, 280px);">
+              <div class="form-group-sm">
+                <label for="input-dur-${dayKey}-${discId}-default">⏱️ Dauer (Min.)</label>
+                <input type="number" id="input-dur-${dayKey}-${discId}-default" class="plan-input part-input-duration"
+                  data-day="${dayKey}" data-disc="${discId}" data-subtype="default" min="0" max="300" step="5"
+                  value="${p.duration != null ? p.duration : 20}" placeholder="20" />
+              </div>
             </div>
           </div>
-        </div>
-      `);
-    } else if (selectedSubs.length === 0) {
-      const pKey = `${discId}_default`;
-      if (!state.parts) state.parts = {};
-      if (!state.parts[pKey]) {
-        state.parts[pKey] = {
-          duration: disc.isRest ? 0 : 30,
-          distance: "",
-          speed: "",
-          intensity: disc.isRest ? "easy" : "moderate"
-        };
+        `);
+      } else {
+        settingsCards.push(`
+          <div class="subtype-part-editor-card disc-border-${discId}">
+            <div class="subtype-part-card-header">
+              <span class="part-card-badge ${disc.badgeClass}">
+                <span class="part-card-icon">${disc.icon}</span>
+                <span class="part-card-label">${disc.label}</span>
+              </span>
+              <span class="part-card-hint">Werte für ${disc.label}</span>
+            </div>
+
+            <div class="day-settings-grid">
+              <div class="form-group-sm">
+                <label for="input-dur-${dayKey}-${discId}-default">⏱️ Dauer (Min.)</label>
+                <input type="number" id="input-dur-${dayKey}-${discId}-default" class="plan-input part-input-duration"
+                  data-day="${dayKey}" data-disc="${discId}" data-subtype="default" min="0" max="720" step="5"
+                  value="${p.duration != null ? p.duration : ''}" placeholder="${disc.isRest ? '0' : '30'}" />
+              </div>
+
+              <div class="form-group-sm">
+                <label for="input-dist-${dayKey}-${discId}-default">📍 Distanz (km)</label>
+                <input type="number" id="input-dist-${dayKey}-${discId}-default" class="plan-input part-input-distance"
+                  data-day="${dayKey}" data-disc="${discId}" data-subtype="default" min="0" max="300" step="0.1"
+                  value="${p.distance !== '' && p.distance != null ? p.distance : ''}" placeholder="${disc.isRest ? '–' : 'z. B. 20'}" />
+              </div>
+
+              <div class="form-group-sm">
+                <label for="input-spd-${dayKey}-${discId}-default">⚡ Pace / Tempo</label>
+                <input type="text" id="input-spd-${dayKey}-${discId}-default" class="plan-input part-input-speed"
+                  data-day="${dayKey}" data-disc="${discId}" data-subtype="default"
+                  value="${escapeHtml(p.speed || '')}" placeholder="${disc.speedPlaceholder}" />
+              </div>
+
+              <div class="form-group-sm">
+                <label for="input-int-${dayKey}-${discId}-default">🔥 Intensität</label>
+                <select id="input-int-${dayKey}-${discId}-default" class="plan-select part-input-intensity"
+                  data-day="${dayKey}" data-disc="${discId}" data-subtype="default">
+                  <option value="easy" ${p.intensity === 'easy' ? 'selected' : ''}>Niedrig (Easy / GA1)</option>
+                  <option value="moderate" ${p.intensity === 'moderate' ? 'selected' : ''}>Mittel (Moderate / GA2)</option>
+                  <option value="hard" ${p.intensity === 'hard' ? 'selected' : ''}>Hoch (Hard / EB)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        `);
       }
-      const p = state.parts[pKey];
-
-      settingsCards.push(`
-        <div class="subtype-part-editor-card disc-border-${discId}">
-          <div class="subtype-part-card-header">
-            <span class="part-card-badge ${disc.badgeClass}">
-              <span class="part-card-icon">${disc.icon}</span>
-              <span class="part-card-label">${disc.label}</span>
-            </span>
-            <span class="part-card-hint">Werte für ${disc.label}</span>
-          </div>
-
-          <div class="day-settings-grid">
-            <div class="form-group-sm">
-              <label for="input-dur-${dayKey}-${discId}-default">⏱️ Dauer (Min.)</label>
-              <input type="number" id="input-dur-${dayKey}-${discId}-default" class="plan-input part-input-duration"
-                data-day="${dayKey}" data-disc="${discId}" data-subtype="default" min="0" max="720" step="5"
-                value="${p.duration != null ? p.duration : ''}" placeholder="${disc.isRest ? '0' : '30'}" />
-            </div>
-
-            <div class="form-group-sm">
-              <label for="input-dist-${dayKey}-${discId}-default">📍 Distanz (km)</label>
-              <input type="number" id="input-dist-${dayKey}-${discId}-default" class="plan-input part-input-distance"
-                data-day="${dayKey}" data-disc="${discId}" data-subtype="default" min="0" max="300" step="0.1"
-                value="${p.distance !== '' && p.distance != null ? p.distance : ''}" placeholder="${disc.isRest ? '–' : 'z. B. 20'}" />
-            </div>
-
-            <div class="form-group-sm">
-              <label for="input-spd-${dayKey}-${discId}-default">⚡ Pace / Tempo</label>
-              <input type="text" id="input-spd-${dayKey}-${discId}-default" class="plan-input part-input-speed"
-                data-day="${dayKey}" data-disc="${discId}" data-subtype="default"
-                value="${escapeHtml(p.speed || '')}" placeholder="${disc.speedPlaceholder}" />
-            </div>
-
-            <div class="form-group-sm">
-              <label for="input-int-${dayKey}-${discId}-default">🔥 Intensität</label>
-              <select id="input-int-${dayKey}-${discId}-default" class="plan-select part-input-intensity"
-                data-day="${dayKey}" data-disc="${discId}" data-subtype="default">
-                <option value="easy" ${p.intensity === 'easy' ? 'selected' : ''}>Niedrig (Easy / GA1)</option>
-                <option value="moderate" ${p.intensity === 'moderate' ? 'selected' : ''}>Mittel (Moderate / GA2)</option>
-                <option value="hard" ${p.intensity === 'hard' ? 'selected' : ''}>Hoch (Hard / EB)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      `);
     } else {
       selectedSubs.forEach(stId => {
         const stConf = disc.subtypes.find(s => s.id === stId) || { id: stId, label: stId, icon: "•" };
@@ -1100,8 +1100,9 @@ function renderDayEditorCard(dayKey) {
           let defInt = "moderate";
           if (stId.includes("intervalle") || stId.includes("schwelle") || stId.includes("race")) defInt = "hard";
           if (stId.includes("ruhe") || stId.includes("mobility") || stId.includes("zone2")) defInt = "easy";
+          const defDur = disc.isRest ? 0 : (disc.onlyDuration ? (stId === "gym" ? 45 : 20) : 30);
           state.parts[pKey] = {
-            duration: disc.isRest ? 0 : 30,
+            duration: defDur,
             distance: "",
             speed: "",
             intensity: defInt
@@ -1109,50 +1110,73 @@ function renderDayEditorCard(dayKey) {
         }
         const p = state.parts[pKey];
 
-        settingsCards.push(`
-          <div class="subtype-part-editor-card disc-border-${discId}">
-            <div class="subtype-part-card-header">
-              <span class="part-card-badge ${disc.badgeClass}">
-                <span class="part-card-icon">${disc.icon} ${stConf.icon}</span>
-                <span class="part-card-label">${disc.label}: ${escapeHtml(stConf.label)}</span>
-              </span>
-              <span class="part-card-hint">Werte für ${disc.label} (${escapeHtml(stConf.label)})</span>
-            </div>
-
-            <div class="day-settings-grid">
-              <div class="form-group-sm">
-                <label for="input-dur-${dayKey}-${discId}-${stId}">⏱️ Dauer (Min.)</label>
-                <input type="number" id="input-dur-${dayKey}-${discId}-${stId}" class="plan-input part-input-duration"
-                  data-day="${dayKey}" data-disc="${discId}" data-subtype="${stId}" min="0" max="720" step="5"
-                  value="${p.duration != null ? p.duration : ''}" placeholder="${disc.isRest ? '0' : '30'}" />
+        if (disc.onlyDuration) {
+          settingsCards.push(`
+            <div class="subtype-part-editor-card disc-border-${discId}">
+              <div class="subtype-part-card-header">
+                <span class="part-card-badge ${disc.badgeClass}">
+                  <span class="part-card-icon">${disc.icon} ${stConf.icon}</span>
+                  <span class="part-card-label">${disc.label}: ${escapeHtml(stConf.label)}</span>
+                </span>
+                <span class="part-card-hint">Zeitdauer für ${disc.label} (${escapeHtml(stConf.label)})</span>
               </div>
 
-              <div class="form-group-sm">
-                <label for="input-dist-${dayKey}-${discId}-${stId}">📍 Distanz (km)</label>
-                <input type="number" id="input-dist-${dayKey}-${discId}-${stId}" class="plan-input part-input-distance"
-                  data-day="${dayKey}" data-disc="${discId}" data-subtype="${stId}" min="0" max="300" step="0.1"
-                  value="${p.distance !== '' && p.distance != null ? p.distance : ''}" placeholder="${disc.isRest ? '–' : 'z. B. 20'}" />
-              </div>
-
-              <div class="form-group-sm">
-                <label for="input-spd-${dayKey}-${discId}-${stId}">⚡ Pace / Tempo</label>
-                <input type="text" id="input-spd-${dayKey}-${discId}-${stId}" class="plan-input part-input-speed"
-                  data-day="${dayKey}" data-disc="${discId}" data-subtype="${stId}"
-                  value="${escapeHtml(p.speed || '')}" placeholder="${disc.speedPlaceholder}" />
-              </div>
-
-              <div class="form-group-sm">
-                <label for="input-int-${dayKey}-${discId}-${stId}">🔥 Intensität</label>
-                <select id="input-int-${dayKey}-${discId}-${stId}" class="plan-select part-input-intensity"
-                  data-day="${dayKey}" data-disc="${discId}" data-subtype="${stId}">
-                  <option value="easy" ${p.intensity === 'easy' ? 'selected' : ''}>Niedrig (Easy / GA1)</option>
-                  <option value="moderate" ${p.intensity === 'moderate' ? 'selected' : ''}>Mittel (Moderate / GA2)</option>
-                  <option value="hard" ${p.intensity === 'hard' ? 'selected' : ''}>Hoch (Hard / EB)</option>
-                </select>
+              <div class="day-settings-grid" style="grid-template-columns: minmax(180px, 280px);">
+                <div class="form-group-sm">
+                  <label for="input-dur-${dayKey}-${discId}-${stId}">⏱️ Dauer (Min.)</label>
+                  <input type="number" id="input-dur-${dayKey}-${discId}-${stId}" class="plan-input part-input-duration"
+                    data-day="${dayKey}" data-disc="${discId}" data-subtype="${stId}" min="0" max="300" step="5"
+                    value="${p.duration != null ? p.duration : (stId === 'gym' ? 45 : 20)}" placeholder="${stId === 'gym' ? '45' : '20'}" />
+                </div>
               </div>
             </div>
-          </div>
-        `);
+          `);
+        } else {
+          settingsCards.push(`
+            <div class="subtype-part-editor-card disc-border-${discId}">
+              <div class="subtype-part-card-header">
+                <span class="part-card-badge ${disc.badgeClass}">
+                  <span class="part-card-icon">${disc.icon} ${stConf.icon}</span>
+                  <span class="part-card-label">${disc.label}: ${escapeHtml(stConf.label)}</span>
+                </span>
+                <span class="part-card-hint">Werte für ${disc.label} (${escapeHtml(stConf.label)})</span>
+              </div>
+
+              <div class="day-settings-grid">
+                <div class="form-group-sm">
+                  <label for="input-dur-${dayKey}-${discId}-${stId}">⏱️ Dauer (Min.)</label>
+                  <input type="number" id="input-dur-${dayKey}-${discId}-${stId}" class="plan-input part-input-duration"
+                    data-day="${dayKey}" data-disc="${discId}" data-subtype="${stId}" min="0" max="720" step="5"
+                    value="${p.duration != null ? p.duration : ''}" placeholder="${disc.isRest ? '0' : '30'}" />
+                </div>
+
+                <div class="form-group-sm">
+                  <label for="input-dist-${dayKey}-${discId}-${stId}">📍 Distanz (km)</label>
+                  <input type="number" id="input-dist-${dayKey}-${discId}-${stId}" class="plan-input part-input-distance"
+                    data-day="${dayKey}" data-disc="${discId}" data-subtype="${stId}" min="0" max="300" step="0.1"
+                    value="${p.distance !== '' && p.distance != null ? p.distance : ''}" placeholder="${disc.isRest ? '–' : 'z. B. 20'}" />
+                </div>
+
+                <div class="form-group-sm">
+                  <label for="input-spd-${dayKey}-${discId}-${stId}">⚡ Pace / Tempo</label>
+                  <input type="text" id="input-spd-${dayKey}-${discId}-${stId}" class="plan-input part-input-speed"
+                    data-day="${dayKey}" data-disc="${discId}" data-subtype="${stId}"
+                    value="${escapeHtml(p.speed || '')}" placeholder="${disc.speedPlaceholder}" />
+                </div>
+
+                <div class="form-group-sm">
+                  <label for="input-int-${dayKey}-${discId}-${stId}">🔥 Intensität</label>
+                  <select id="input-int-${dayKey}-${discId}-${stId}" class="plan-select part-input-intensity"
+                    data-day="${dayKey}" data-disc="${discId}" data-subtype="${stId}">
+                    <option value="easy" ${p.intensity === 'easy' ? 'selected' : ''}>Niedrig (Easy / GA1)</option>
+                    <option value="moderate" ${p.intensity === 'moderate' ? 'selected' : ''}>Mittel (Moderate / GA2)</option>
+                    <option value="hard" ${p.intensity === 'hard' ? 'selected' : ''}>Hoch (Hard / EB)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          `);
+        }
       });
     }
   });
@@ -1175,7 +1199,7 @@ function renderDayEditorCard(dayKey) {
       </div>
 
       <div class="day-editor-row">
-        <label class="editor-field-label">1. Disziplin(en) festlegen (Tippe auf mehrere für Koppeltraining, Mobility ist frei kombinierbar):</label>
+        <label class="editor-field-label">1. Disziplin(en) festlegen (Tippe auf mehrere für Koppeltraining, Fitness ist frei kombinierbar):</label>
         <div class="discipline-btn-group" role="group" aria-label="Disziplin für ${dayConf.full}">
           ${discButtons}
         </div>
@@ -1263,7 +1287,7 @@ async function saveAccountPlan() {
     for (const dayKey of PLAN_WEEKDAYS) {
       const st = editorState[dayKey] || { disciplines: ["rest"], subtypesByDisc: { rest: ["ruhe"] }, parts: {}, notes: "" };
       const disciplines = (st.disciplines && st.disciplines.length > 0) ? st.disciplines : ["rest"];
-      const sportDiscs = disciplines.filter(d => d !== "rest" && d !== "mobility");
+      const sportDiscs = disciplines.filter(d => d !== "rest" && d !== "fitness");
       const isRest = sportDiscs.length === 0 && disciplines.includes("rest");
 
       const partsArray = [];
@@ -1279,7 +1303,7 @@ async function saveAccountPlan() {
         const disc = PLAN_DISCIPLINES[discId] || PLAN_DISCIPLINES.rest;
         const subIds = (st.subtypesByDisc && st.subtypesByDisc[discId]) || [];
 
-        if (disc.onlyDuration || subIds.length === 0) {
+        if (subIds.length === 0) {
           const pKey = `${discId}_default`;
           const p = (st.parts && st.parts[pKey]) ? st.parts[pKey] : {};
           const pDur = parseInt(p.duration, 10) || (disc.isRest ? 0 : (disc.onlyDuration ? 20 : 30));
@@ -1317,20 +1341,22 @@ async function saveAccountPlan() {
             allSubtypeIds.push(stId);
             const pKey = `${discId}_${stId}`;
             const p = (st.parts && st.parts[pKey]) ? st.parts[pKey] : {};
-            const pDur = parseInt(p.duration, 10) || 0;
+            const pDur = parseInt(p.duration, 10) || (disc.onlyDuration ? (stId === "gym" ? 45 : 20) : 0);
             totalDuration += pDur;
 
             let pDist = null;
-            if (p.distance !== "" && p.distance != null && !isNaN(parseFloat(p.distance))) {
+            if (!disc.onlyDuration && p.distance !== "" && p.distance != null && !isNaN(parseFloat(p.distance))) {
               pDist = Math.round(parseFloat(p.distance) * 10) / 10;
               totalDistance += pDist;
               hasDistance = true;
             }
 
-            const pSpd = (p.speed || "").trim();
+            const pSpd = disc.onlyDuration ? "" : (p.speed || "").trim();
             if (pSpd) speeds.push(`${disc.label}: ${pSpd}`);
 
-            const pInt = p.intensity || (disc.isRest ? "easy" : "moderate");
+            const pInt = disc.onlyDuration
+              ? (stId === "gym" ? "moderate" : "easy")
+              : (p.intensity || (disc.isRest ? "easy" : "moderate"));
             if ((intensityRank[pInt] || 1) > (intensityRank[maxIntensity] || 1)) {
               maxIntensity = pInt;
             }
@@ -1513,13 +1539,13 @@ function setupAccountPlanListeners() {
         if (!Array.isArray(state.disciplines)) state.disciplines = ["rest"];
 
         if (clickedDisc === "rest") {
-          // Ruhetag deaktiviert die regulären Sportarten (swim, ride, run), lässt aber ggf. ausgewähltes Mobility bestehen
-          const hadMobility = state.disciplines.includes("mobility");
-          if (state.disciplines.includes("rest") && hadMobility) {
-            // Wenn Ruhetag + Mobility aktiv war und man klickt auf Ruhetag -> Ruhetag abwählen, nur Mobility bleibt
-            state.disciplines = ["mobility"];
+          // Ruhetag deaktiviert die regulären Sportarten (swim, ride, run), lässt aber ggf. ausgewähltes Fitness bestehen
+          const hadFitness = state.disciplines.includes("fitness");
+          if (state.disciplines.includes("rest") && hadFitness) {
+            // Wenn Ruhetag + Fitness aktiv war und man klickt auf Ruhetag -> Ruhetag abwählen, nur Fitness bleibt
+            state.disciplines = ["fitness"];
           } else {
-            state.disciplines = hadMobility ? ["rest", "mobility"] : ["rest"];
+            state.disciplines = hadFitness ? ["rest", "fitness"] : ["rest"];
             if (!state.subtypesByDisc) state.subtypesByDisc = {};
             state.subtypesByDisc.rest = ["ruhe"];
             const pKey = "rest_ruhe";
@@ -1528,9 +1554,9 @@ function setupAccountPlanListeners() {
               state.parts[pKey] = { duration: 0, distance: "", speed: "", intensity: "easy" };
             }
           }
-        } else if (clickedDisc === "mobility") {
-          // Mobility lässt sich zu jedem Tag (egal ob Ruhetag oder Sporttag) frei hinzufügen oder abwählen!
-          const idx = state.disciplines.indexOf("mobility");
+        } else if (clickedDisc === "fitness") {
+          // Fitness lässt sich zu jedem Tag (egal ob Ruhetag oder Sporttag) frei hinzufügen oder abwählen!
+          const idx = state.disciplines.indexOf("fitness");
           if (idx > -1) {
             state.disciplines.splice(idx, 1);
             if (state.disciplines.length === 0) {
@@ -1539,16 +1565,26 @@ function setupAccountPlanListeners() {
               state.subtypesByDisc.rest = ["ruhe"];
             }
           } else {
-            state.disciplines.push("mobility");
+            state.disciplines.push("fitness");
             if (!state.subtypesByDisc) state.subtypesByDisc = {};
-            state.subtypesByDisc.mobility = [];
-            if (!state.parts) state.parts = {};
-            if (!state.parts["mobility_default"]) {
-              state.parts["mobility_default"] = { duration: 20, distance: "", speed: "", intensity: "easy" };
+            if (!Array.isArray(state.subtypesByDisc.fitness) || state.subtypesByDisc.fitness.length === 0) {
+              state.subtypesByDisc.fitness = ["mobility"];
             }
+            if (!state.parts) state.parts = {};
+            state.subtypesByDisc.fitness.forEach(stId => {
+              const pKey = `fitness_${stId}`;
+              if (!state.parts[pKey]) {
+                state.parts[pKey] = {
+                  duration: stId === "gym" ? 45 : 20,
+                  distance: "",
+                  speed: "",
+                  intensity: stId === "gym" ? "moderate" : "easy"
+                };
+              }
+            });
           }
         } else {
-          // Klick auf reguläre Sport-Disziplin (swim, ride, run): Ruhetag immer entfernen, Mobility darf bleiben
+          // Klick auf reguläre Sport-Disziplin (swim, ride, run): Ruhetag immer entfernen, Fitness darf bleiben
           state.disciplines = state.disciplines.filter(d => d !== "rest");
 
           const idx = state.disciplines.indexOf(clickedDisc);
@@ -1562,10 +1598,10 @@ function setupAccountPlanListeners() {
               state.subtypesByDisc.rest = ["ruhe"];
             }
           } else {
-            // Neu hinzunehmen (vor evtl. vorhandenem 'mobility' einreihen, damit Hauptsportart zuerst steht)
-            const mobIdx = state.disciplines.indexOf("mobility");
-            if (mobIdx > -1) {
-              state.disciplines.splice(mobIdx, 0, clickedDisc);
+            // Neu hinzunehmen (vor evtl. vorhandenem 'fitness' einreihen, damit Hauptsportart zuerst steht)
+            const fitIdx = state.disciplines.indexOf("fitness");
+            if (fitIdx > -1) {
+              state.disciplines.splice(fitIdx, 0, clickedDisc);
             } else {
               state.disciplines.push(clickedDisc);
             }
@@ -1615,8 +1651,9 @@ function setupAccountPlanListeners() {
             let defInt = "moderate";
             if (subtypeId.includes("intervalle") || subtypeId.includes("schwelle") || subtypeId.includes("race")) defInt = "hard";
             if (subtypeId.includes("ruhe") || subtypeId.includes("mobility") || subtypeId.includes("zone2")) defInt = "easy";
+            const defDur = discId === "rest" ? 0 : (discId === "fitness" ? (subtypeId === "gym" ? 45 : 20) : 30);
             state.parts[pKey] = {
-              duration: discId === "rest" ? 0 : 30,
+              duration: defDur,
               distance: "",
               speed: "",
               intensity: defInt

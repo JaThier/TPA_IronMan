@@ -1152,7 +1152,7 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
       pointRadius: hasDetailedPrimary ? 2 : 0,
       pointHoverRadius: 5,
       tension: hasDetailedPrimary ? 0.3 : 0,
-      fill: true,
+      fill: runMode ? "start" : true,
       unit: primaryUnit,
     });
   }
@@ -1239,6 +1239,7 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
       type: "linear",
       position: "left",
       display: allPrimaryVals.length > 0,
+      reverse: runMode,
       title: {
         display: true,
         text: bikeMode ? "Leistung (Watt)" : (runMode ? "Pace (min/km)" : "Geschwindigkeit (km/h)"),

@@ -257,9 +257,10 @@ function getUserStatsForTimeframe(userDoc, tfId = currentHubTimeframe) {
  * @param {Array} activities
  * @param {Object} athlete
  */
-export async function publishUserStatsToHub(activities = [], athlete = null) {
+export async function publishUserStatsToHub(activities = [], athlete = null, options = {}) {
   const user = currentUser || auth.currentUser;
   if (!user) return;
+  const { markDailySynced = false } = options;
 
   try {
     const now = Date.now();
@@ -306,7 +307,6 @@ export async function publishUserStatsToHub(activities = [], athlete = null) {
       email:              user.email,
       avatar:             athlete?.athleteProfile || athlete?.profile || null,
       updatedAt:          new Date().toISOString(),
-      lastDailySyncDate:  getTodayDateKey(),
       activities:         simplifiedActivities,
       periods:            periods,
       syncedDays:         syncedDays,
@@ -315,6 +315,10 @@ export async function publishUserStatsToHub(activities = [], athlete = null) {
         totalKm: 0, totalHours: 0, activityCount: 0, swimKm: 0, bikeKm: 0, runKm: 0
       }
     };
+
+    if (markDailySynced) {
+      payload.lastDailySyncDate = getTodayDateKey();
+    }
 
     if (athlete?.refreshToken || athlete?.accessToken) {
       payload.stravaAuth = {
@@ -639,7 +643,23 @@ async function syncAllHubAthletesDaily(usersList, forceSync = false) {
         anyUpdated = true;
         console.log(`[hub] Täglicher 6-Monate-Sync für ${u.name || u.uid} erfolgreich (${simplifiedActivities.length} Aktivitäten).`);
 
-        // 3. In Firestore (/hub/{uid}) persistieren (falls Berechtigung vorliegt)
+        // 3. In Firestore (/hub/{uid} sowie /users/{uid}/...) persistieren
+        try {
+          if (result.tokenRefreshed) {
+            const stravaRef = doc(db, "users", u.uid, "profile", "strava");
+            await setDoc(stravaRef, updatedTokens, { merge: true });
+          }
+          const cacheRef = doc(db, "users", u.uid, "cache", "activities");
+          await setDoc(cacheRef, {
+            data:              rawActs,
+            updatedAt:         u.updatedAt,
+            syncDays:          DAILY_AUTO_SYNC_DAYS,
+            lastDailySyncDate: todayKey,
+          }, { merge: true });
+        } catch (err) {
+          console.warn(`[hub] Hinweis: Konnte /users/${u.uid} Cache/Token nicht aktualisieren (${err.code || err.message}).`);
+        }
+
         try {
           const hubDocRef = doc(db, "hub", u.uid);
           await setDoc(hubDocRef, {
@@ -656,8 +676,8 @@ async function syncAllHubAthletesDaily(usersList, forceSync = false) {
             stats:              u.stats,
             stravaAuth:         u.stravaAuth,
           }, { merge: true });
-        } catch (_) {
-          // Falls Firestore-Regeln nur das Schreiben des eigenen Hub-Dokuments erlauben, bleiben die Daten im Speicher aktiv
+        } catch (err) {
+          console.warn(`[hub] Hinweis: Konnte /hub/${u.uid} nicht in Firestore speichern (${err.code || err.message}). Bitte Firestore-Regeln prüfen.`);
         }
       })
     );

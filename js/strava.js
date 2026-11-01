@@ -115,15 +115,15 @@ export async function initStrava(user) {
       window.stravaTokens = stravaTokens;
       selectedActivityId = allActivities[0]?.id || null;
       renderActivitiesView();
-      // Im Hintergrund Hub synchronisieren
-      await publishUserStatsToHub(allActivities, stravaTokens);
+      // Im Hintergrund Hub synchronisieren (nur als heute frisch synchronisiert markieren, wenn bereits erledigt)
+      await publishUserStatsToHub(allActivities, stravaTokens, { markDailySynced: !isDailySyncDue });
       // KI-Vorschau im Trainingsplan aktualisieren
       window.updateAiPreview?.();
 
       // Falls heute noch kein automatischer 6-Monate-Sync stattfand, im Hintergrund nachholen
       if (isDailySyncDue) {
         console.log(`[strava] Täglicher Auto-Sync (${DAILY_AUTO_SYNC_DAYS} Tage / 6 Monate) wird im Hintergrund ausgeführt…`);
-        fetchAndDisplayActivities(DAILY_AUTO_SYNC_DAYS, { silentLoading: true, isAutoDailySync: true });
+        await fetchAndDisplayActivities(DAILY_AUTO_SYNC_DAYS, { silentLoading: true, isAutoDailySync: true });
       }
     } else {
       await fetchAndDisplayActivities(DAILY_AUTO_SYNC_DAYS, { isAutoDailySync: true });
@@ -366,10 +366,11 @@ export async function fetchAndDisplayActivities(days = syncDaysSetting, options 
     }
 
     // In Firestore cachen (inkl. Tagesstempel für den täglichen 6-Monate-Sync)
-    await cacheActivities(allActivities, syncDaysSetting >= DAILY_AUTO_SYNC_DAYS);
+    const isFullSixMonthSync = syncDaysSetting >= DAILY_AUTO_SYNC_DAYS;
+    await cacheActivities(allActivities, isFullSixMonthSync);
 
     // Eigene Stats für den Hub aktualisieren
-    await publishUserStatsToHub(allActivities, stravaTokens);
+    await publishUserStatsToHub(allActivities, stravaTokens, { markDailySynced: isFullSixMonthSync });
 
     if (!isAutoDailySync) {
       showToast(`✅ ${allActivities.length} Aktivitäten (${syncDaysSetting} Tage) synchronisiert!`, "success");

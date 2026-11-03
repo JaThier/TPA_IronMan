@@ -58,16 +58,16 @@ async function initApp(user) {
   showDashboard(user);
   initTabNavigation();
 
-  // Feature-Module dynamisch laden (Cache-Busting für Entwicklungsstand)
-  const cb = Date.now();
-  import(`./strava.js?cb=${cb}`).then((m) => m.initStrava(user));
-  import(`./gemini.js?cb=${cb}`).then((m) => m.initTrainingPlan(user));
-  import(`./hub.js?cb=${cb}`).then((m) => m.initHub(user));
-  import(`./account.js?cb=${cb}`).then((m) => m.initAccount(user));
+  // Feature-Module laden (ohne wechselnden Query-String, damit ES-Module-Singletons erhalten bleiben)
+  import("./strava.js").then((m) => m.initStrava(user));
+  import("./gemini.js").then((m) => m.initTrainingPlan(user));
+  import("./hub.js").then((m) => m.initHub(user));
+  import("./account.js").then((m) => m.initAccount(user));
 }
 
 // ── Tab-Navigation ─────────────────────────────────────────
 const VALID_TABS = ["activities", "plan", "ai", "hub", "account"];
+let tabNavInitialized = false;
 
 export function initTabNavigation() {
   const tabs = document.querySelectorAll(".nav-tab");
@@ -79,6 +79,9 @@ export function initTabNavigation() {
   } else {
     switchTab("activities");
   }
+
+  if (tabNavInitialized) return;
+  tabNavInitialized = true;
 
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => {
@@ -115,14 +118,13 @@ export function switchTab(tabName) {
     view.classList.toggle("hidden", !isTarget);
   });
 
-  // Falls zum Hub, Plan, KI-Assistenz oder Konto gewechselt wird, Daten aktualisieren
-  const cb = Date.now();
+  // Falls zum Hub, Plan oder KI-Assistenz gewechselt wird, Daten aktualisieren
   if (tabName === "hub") {
-    import(`./hub.js?cb=${cb}`).then(m => m.loadAndRenderHub());
+    import("./hub.js").then(m => m.loadAndRenderHub());
   } else if (tabName === "plan") {
-    import(`./account.js?cb=${cb}`).then(m => m.loadAndRenderAccountPlan?.());
+    import("./account.js").then(m => m.loadAndRenderAccountPlan?.());
   } else if (tabName === "ai") {
-    import(`./gemini.js?cb=${cb}`).then(m => m.updateActivityCountPreview?.());
+    import("./gemini.js").then(m => m.updateActivityCountPreview?.());
   }
 }
 

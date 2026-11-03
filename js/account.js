@@ -22,19 +22,24 @@ let editorState = {};
 export async function initAccount(user) {
   currentUser = user;
 
-  // Profil-Daten laden und Formular befüllen
-  await renderAccountProfile();
+  // Trainingsplan-Listener sofort synchron binden, damit der Bearbeiten-Button ohne Verzögerung reagiert
+  setupAccountPlanListeners();
+
+  // Formular-Listener (gegen Doppel-Registrierung geschützt)
+  const form = document.getElementById("account-profile-form");
+  if (form && !form.dataset.bound) {
+    form.dataset.bound = "true";
+    form.addEventListener("submit", handleAccountFormSubmit);
+  }
+
+  // Trainingsplan und Profil parallel initialisieren
+  await Promise.all([
+    loadAndRenderAccountPlan(),
+    renderAccountProfile(),
+  ]);
 
   // Onboarding prüfen: Falls kein Anzeigename existiert, Modal anzeigen
   await checkAndPromptFirstLoginName(user);
-
-  // Formular-Listener
-  const form = document.getElementById("account-profile-form");
-  form?.addEventListener("submit", handleAccountFormSubmit);
-
-  // Trainingsplan auf der Konto-Seite initialisieren und laden
-  setupAccountPlanListeners();
-  await loadAndRenderAccountPlan();
 }
 
 /**
@@ -549,17 +554,27 @@ export async function loadAndRenderAccountPlan() {
     const q = query(plansRef, orderBy("createdAt", "desc"), limit(1));
     const snapshot = await getDocs(q);
 
+    const editContainer = document.getElementById("account-plan-edit-container");
+    const isEditorOpen = Boolean(editContainer && !editContainer.classList.contains("hidden"));
+
     if (!snapshot.empty) {
       const planDoc = snapshot.docs[0];
       currentAccountPlan = { id: planDoc.id, ...planDoc.data() };
-      renderAccountPlanView(currentAccountPlan);
+      if (!isEditorOpen) {
+        renderAccountPlanView(currentAccountPlan);
+      }
     } else {
       currentAccountPlan = null;
-      renderAccountPlanView(null);
+      if (!isEditorOpen) {
+        renderAccountPlanView(null);
+      }
     }
   } catch (err) {
     console.error("[account] Fehler beim Laden des aktuellen Trainingsplans:", err);
-    renderAccountPlanView(null);
+    const editContainer = document.getElementById("account-plan-edit-container");
+    if (!editContainer || editContainer.classList.contains("hidden")) {
+      renderAccountPlanView(null);
+    }
   }
 }
 
@@ -1445,31 +1460,40 @@ async function saveAccountPlan() {
  */
 let planListenersInitialized = false;
 function setupAccountPlanListeners() {
-  if (planListenersInitialized) return;
-  planListenersInitialized = true;
+  const bindClickOnce = (id, handler) => {
+    const el = document.getElementById(id);
+    if (el && !el.dataset.bound) {
+      el.dataset.bound = "true";
+      el.addEventListener("click", handler);
+    }
+  };
 
-  document.getElementById("account-plan-toggle-mode-btn")?.addEventListener("click", toggleAccountPlanMode);
-  document.getElementById("account-plan-save-btn")?.addEventListener("click", saveAccountPlan);
-  document.getElementById("account-plan-save-btn-top")?.addEventListener("click", saveAccountPlan);
+  bindClickOnce("account-plan-toggle-mode-btn", toggleAccountPlanMode);
+  bindClickOnce("account-plan-save-btn", saveAccountPlan);
+  bindClickOnce("account-plan-save-btn-top", saveAccountPlan);
 
   const cancelHandler = () => {
     renderAccountPlanView(currentAccountPlan);
   };
-  document.getElementById("account-plan-cancel-btn")?.addEventListener("click", cancelHandler);
-  document.getElementById("account-plan-cancel-btn-top")?.addEventListener("click", cancelHandler);
+  bindClickOnce("account-plan-cancel-btn", cancelHandler);
+  bindClickOnce("account-plan-cancel-btn-top", cancelHandler);
 
-  document.getElementById("btn-template-ironman")?.addEventListener("click", () => {
+  bindClickOnce("btn-template-ironman", () => {
     applyTemplate(IRONMAN_TEMPLATE);
     showToast("⚡ Ironman-Trainingswoche geladen!", "info");
   });
 
-  document.getElementById("btn-template-reset")?.addEventListener("click", () => {
+  bindClickOnce("btn-template-reset", () => {
     applyTemplate(RESET_TEMPLATE);
     showToast("🧹 Alle Tage auf Ruhetag gesetzt.", "info");
   });
 
+  if (planListenersInitialized) return;
+  planListenersInitialized = true;
+
   const editorList = document.getElementById("account-plan-editor-days");
-  if (editorList) {
+  if (editorList && !editorList.dataset.bound) {
+    editorList.dataset.bound = "true";
     // Input Delegation
     editorList.addEventListener("input", (e) => {
       const target = e.target;

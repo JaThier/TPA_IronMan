@@ -12,7 +12,7 @@ import {
   DAILY_AUTO_SYNC_DAYS,
   getTodayDateKey,
   fetchStravaActivitiesWithTokens,
-} from "./strava.js?v=3.7";
+} from "./strava.js?v=3.8";
 
 /** Konfiguration der verfügbaren Zeiträume für den fairen Leistungsvergleich */
 export const HUB_TIMEFRAMES = {

@@ -9,7 +9,7 @@ import {
   doc, getDoc, setDoc,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast } from "./ui-helpers.js";
-import { publishUserStatsToHub } from "./hub.js?v=3.3";
+import { publishUserStatsToHub } from "./hub.js?v=3.4";
 
 // ── Strava-Konstanten ──────────────────────────────────────
 const STRAVA_REDIRECT_URI = window.location.origin + window.location.pathname;

@@ -9,7 +9,7 @@ import {
   doc, getDoc, setDoc, collection, addDoc, query, orderBy, limit, getDocs,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast } from "./ui-helpers.js";
-import { loadAndRenderHub, publishUserStatsToHub } from "./hub.js?v=3.3";
+import { loadAndRenderHub, publishUserStatsToHub } from "./hub.js?v=3.4";
 
 let currentUser = null;
 let currentAccountPlan = null;
@@ -1283,6 +1283,139 @@ function applyTemplate(templateData) {
 }
 
 /**
+ * Kompiliert den aktuellen `editorState` zu einem `weekPlan`-Objekt.
+ */
+function compileWeekPlanFromEditorState() {
+  const finalWeekPlan = {};
+  for (const dayKey of PLAN_WEEKDAYS) {
+    const st = editorState[dayKey] || { disciplines: ["rest"], subtypesByDisc: { rest: ["ruhe"] }, parts: {}, notes: "" };
+    const disciplines = (st.disciplines && st.disciplines.length > 0) ? st.disciplines : ["rest"];
+    const sportDiscs = disciplines.filter(d => d !== "rest" && d !== "fitness");
+    const isRest = sportDiscs.length === 0 && disciplines.includes("rest");
+
+    const partsArray = [];
+    const allSubtypeIds = [];
+    let totalDuration = 0;
+    let totalDistance = 0;
+    let hasDistance = false;
+    const speeds = [];
+    let maxIntensity = "easy";
+    const intensityRank = { easy: 1, moderate: 2, hard: 3 };
+
+    for (const discId of disciplines) {
+      const disc = PLAN_DISCIPLINES[discId] || PLAN_DISCIPLINES.rest;
+      const subIds = (st.subtypesByDisc && st.subtypesByDisc[discId]) || [];
+
+      if (subIds.length === 0) {
+        const pKey = `${discId}_default`;
+        const p = (st.parts && st.parts[pKey]) ? st.parts[pKey] : {};
+        const pDur = parseInt(p.duration, 10) || (disc.isRest ? 0 : (disc.onlyDuration ? 20 : 30));
+        totalDuration += pDur;
+
+        let pDist = null;
+        if (!disc.onlyDuration && p.distance !== "" && p.distance != null && !isNaN(parseFloat(p.distance))) {
+          pDist = Math.round(parseFloat(p.distance) * 10) / 10;
+          totalDistance += pDist;
+          hasDistance = true;
+        }
+
+        const pSpd = disc.onlyDuration ? "" : (p.speed || "").trim();
+        if (pSpd) speeds.push(`${disc.label}: ${pSpd}`);
+
+        const pInt = disc.onlyDuration ? "easy" : (p.intensity || (disc.isRest ? "easy" : "moderate"));
+        if ((intensityRank[pInt] || 1) > (intensityRank[maxIntensity] || 1)) {
+          maxIntensity = pInt;
+        }
+
+        partsArray.push({
+          discId,
+          id: "default",
+          label: disc.fullLabel,
+          shortLabel: disc.label,
+          icon: disc.icon,
+          discIcon: disc.icon,
+          duration: pDur,
+          distance: pDist,
+          speed: pSpd,
+          intensity: pInt
+        });
+      } else {
+        for (const stId of subIds) {
+          allSubtypeIds.push(stId);
+          const pKey = `${discId}_${stId}`;
+          const p = (st.parts && st.parts[pKey]) ? st.parts[pKey] : {};
+          const pDur = parseInt(p.duration, 10) || (disc.onlyDuration ? (stId === "gym" ? 45 : 20) : 0);
+          totalDuration += pDur;
+
+          let pDist = null;
+          if (!disc.onlyDuration && p.distance !== "" && p.distance != null && !isNaN(parseFloat(p.distance))) {
+            pDist = Math.round(parseFloat(p.distance) * 10) / 10;
+            totalDistance += pDist;
+            hasDistance = true;
+          }
+
+          const pSpd = disc.onlyDuration ? "" : (p.speed || "").trim();
+          if (pSpd) speeds.push(`${disc.label}: ${pSpd}`);
+
+          const pInt = disc.onlyDuration
+            ? (stId === "gym" ? "moderate" : "easy")
+            : (p.intensity || (disc.isRest ? "easy" : "moderate"));
+          if ((intensityRank[pInt] || 1) > (intensityRank[maxIntensity] || 1)) {
+            maxIntensity = pInt;
+          }
+
+          partsArray.push({
+            discId,
+            id: stId,
+            label: `${disc.label}: ${getSubtypeLabel(discId, stId)}`,
+            shortLabel: getSubtypeLabel(discId, stId),
+            icon: getSubtypeIcon(discId, stId) || disc.icon,
+            discIcon: disc.icon,
+            duration: pDur,
+            distance: pDist,
+            speed: pSpd,
+            intensity: pInt
+          });
+        }
+      }
+    }
+
+    // Typ für maximale Kompatibilität
+    const finalType = isRest ? "rest" : (sportDiscs.length > 1 ? "brick" : (sportDiscs[0] || disciplines[0] || "rest"));
+
+    let description = st.notes?.trim() || "";
+    if (!description) {
+      if (isRest) {
+        description = "Ruhetag & Regeneration";
+      } else {
+        const discSummaries = disciplines.map(d => {
+          const disc = PLAN_DISCIPLINES[d] || PLAN_DISCIPLINES.rest;
+          const subLabels = ((st.subtypesByDisc && st.subtypesByDisc[d]) || []).map(s => getSubtypeLabel(d, s));
+          return subLabels.length > 0 ? `${disc.label} (${subLabels.join(", ")})` : disc.label;
+        });
+        description = discSummaries.join(" + ");
+      }
+    }
+
+    finalWeekPlan[dayKey] = {
+      type: finalType,
+      disciplines,
+      subtypes: allSubtypeIds,
+      subtypesByDisc: st.subtypesByDisc || {},
+      parts: partsArray,
+      duration: totalDuration,
+      distance: hasDistance ? Math.round(totalDistance * 10) / 10 : null,
+      speed: speeds.join(" • "),
+      intensity: maxIntensity,
+      description,
+      notes: st.notes?.trim() || "",
+      locked: Boolean(st.locked)
+    };
+  }
+  return finalWeekPlan;
+}
+
+/**
  * Speichert den manuell erstellten Trainingsplan in Firestore.
  */
 async function saveAccountPlan() {
@@ -1298,133 +1431,7 @@ async function saveAccountPlan() {
   if (saveBtnTop) { saveBtnTop.disabled = true; saveBtnTop.textContent = "Speichere…"; }
 
   try {
-    const finalWeekPlan = {};
-    for (const dayKey of PLAN_WEEKDAYS) {
-      const st = editorState[dayKey] || { disciplines: ["rest"], subtypesByDisc: { rest: ["ruhe"] }, parts: {}, notes: "" };
-      const disciplines = (st.disciplines && st.disciplines.length > 0) ? st.disciplines : ["rest"];
-      const sportDiscs = disciplines.filter(d => d !== "rest" && d !== "fitness");
-      const isRest = sportDiscs.length === 0 && disciplines.includes("rest");
-
-      const partsArray = [];
-      const allSubtypeIds = [];
-      let totalDuration = 0;
-      let totalDistance = 0;
-      let hasDistance = false;
-      const speeds = [];
-      let maxIntensity = "easy";
-      const intensityRank = { easy: 1, moderate: 2, hard: 3 };
-
-      for (const discId of disciplines) {
-        const disc = PLAN_DISCIPLINES[discId] || PLAN_DISCIPLINES.rest;
-        const subIds = (st.subtypesByDisc && st.subtypesByDisc[discId]) || [];
-
-        if (subIds.length === 0) {
-          const pKey = `${discId}_default`;
-          const p = (st.parts && st.parts[pKey]) ? st.parts[pKey] : {};
-          const pDur = parseInt(p.duration, 10) || (disc.isRest ? 0 : (disc.onlyDuration ? 20 : 30));
-          totalDuration += pDur;
-
-          let pDist = null;
-          if (!disc.onlyDuration && p.distance !== "" && p.distance != null && !isNaN(parseFloat(p.distance))) {
-            pDist = Math.round(parseFloat(p.distance) * 10) / 10;
-            totalDistance += pDist;
-            hasDistance = true;
-          }
-
-          const pSpd = disc.onlyDuration ? "" : (p.speed || "").trim();
-          if (pSpd) speeds.push(`${disc.label}: ${pSpd}`);
-
-          const pInt = disc.onlyDuration ? "easy" : (p.intensity || (disc.isRest ? "easy" : "moderate"));
-          if ((intensityRank[pInt] || 1) > (intensityRank[maxIntensity] || 1)) {
-            maxIntensity = pInt;
-          }
-
-          partsArray.push({
-            discId,
-            id: "default",
-            label: disc.fullLabel,
-            shortLabel: disc.label,
-            icon: disc.icon,
-            discIcon: disc.icon,
-            duration: pDur,
-            distance: pDist,
-            speed: pSpd,
-            intensity: pInt
-          });
-        } else {
-          for (const stId of subIds) {
-            allSubtypeIds.push(stId);
-            const pKey = `${discId}_${stId}`;
-            const p = (st.parts && st.parts[pKey]) ? st.parts[pKey] : {};
-            const pDur = parseInt(p.duration, 10) || (disc.onlyDuration ? (stId === "gym" ? 45 : 20) : 0);
-            totalDuration += pDur;
-
-            let pDist = null;
-            if (!disc.onlyDuration && p.distance !== "" && p.distance != null && !isNaN(parseFloat(p.distance))) {
-              pDist = Math.round(parseFloat(p.distance) * 10) / 10;
-              totalDistance += pDist;
-              hasDistance = true;
-            }
-
-            const pSpd = disc.onlyDuration ? "" : (p.speed || "").trim();
-            if (pSpd) speeds.push(`${disc.label}: ${pSpd}`);
-
-            const pInt = disc.onlyDuration
-              ? (stId === "gym" ? "moderate" : "easy")
-              : (p.intensity || (disc.isRest ? "easy" : "moderate"));
-            if ((intensityRank[pInt] || 1) > (intensityRank[maxIntensity] || 1)) {
-              maxIntensity = pInt;
-            }
-
-            partsArray.push({
-              discId,
-              id: stId,
-              label: `${disc.label}: ${getSubtypeLabel(discId, stId)}`,
-              shortLabel: getSubtypeLabel(discId, stId),
-              icon: getSubtypeIcon(discId, stId) || disc.icon,
-              discIcon: disc.icon,
-              duration: pDur,
-              distance: pDist,
-              speed: pSpd,
-              intensity: pInt
-            });
-          }
-        }
-      }
-
-      // Typ für maximale Kompatibilität
-      const finalType = isRest ? "rest" : (sportDiscs.length > 1 ? "brick" : (sportDiscs[0] || disciplines[0] || "rest"));
-
-      let description = st.notes?.trim() || "";
-      if (!description) {
-        if (isRest) {
-          description = "Ruhetag & Regeneration";
-        } else {
-          const discSummaries = disciplines.map(d => {
-            const disc = PLAN_DISCIPLINES[d] || PLAN_DISCIPLINES.rest;
-            const subLabels = ((st.subtypesByDisc && st.subtypesByDisc[d]) || []).map(s => getSubtypeLabel(d, s));
-            return subLabels.length > 0 ? `${disc.label} (${subLabels.join(", ")})` : disc.label;
-          });
-          description = discSummaries.join(" + ");
-        }
-      }
-
-      finalWeekPlan[dayKey] = {
-        type: finalType,
-        disciplines,
-        subtypes: allSubtypeIds,
-        subtypesByDisc: st.subtypesByDisc || {},
-        parts: partsArray,
-        duration: totalDuration,
-        distance: hasDistance ? Math.round(totalDistance * 10) / 10 : null,
-        speed: speeds.join(" • "),
-        intensity: maxIntensity,
-        description,
-        notes: st.notes?.trim() || "",
-        locked: Boolean(st.locked)
-      };
-    }
-
+    const finalWeekPlan = compileWeekPlanFromEditorState();
     const coachNote = document.getElementById("account-plan-edit-coachnote")?.value.trim() || "";
 
     const planPayload = {
@@ -1456,6 +1463,210 @@ async function saveAccountPlan() {
 }
 
 /**
+ * Exportiert den aktuellen Trainingsplan als .ics-Kalenderdatei (iCalendar RFC 5545)
+ * für die gewählte Anzahl an Wochen (für Handy- & Desktop-Kalender).
+ */
+export function exportAccountPlanToCalendar() {
+  const editContainer = document.getElementById("account-plan-edit-container");
+  const isEditorOpen = Boolean(editContainer && !editContainer.classList.contains("hidden"));
+
+  let planToExport = null;
+  if (isEditorOpen && Object.keys(editorState).length > 0) {
+    planToExport = {
+      weekPlan: compileWeekPlanFromEditorState(),
+      coachNote: document.getElementById("account-plan-edit-coachnote")?.value.trim() || ""
+    };
+  } else if (currentAccountPlan && currentAccountPlan.weekPlan) {
+    planToExport = currentAccountPlan;
+  }
+
+  if (!planToExport || !planToExport.weekPlan) {
+    showToast("Bitte erstelle zuerst einen Trainingsplan, bevor du ihn in den Kalender exportierst.", "error");
+    return;
+  }
+
+  const weeksSelect = document.getElementById("account-plan-export-weeks");
+  const weeksCount = Math.max(1, Math.min(52, parseInt(weeksSelect?.value || "4", 10) || 4));
+  const totalDays = weeksCount * 7;
+
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const formatIcsDate = (d) => `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
+  const formatIcsUtcStamp = (d) =>
+    `${d.getUTCFullYear()}${pad2(d.getUTCMonth() + 1)}${pad2(d.getUTCDate())}T${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}${pad2(d.getUTCSeconds())}Z`;
+
+  const escapeIcsText = (str) =>
+    (str || "")
+      .toString()
+      .replace(/\\/g, "\\\\")
+      .replace(/;/g, "\\;")
+      .replace(/,/g, "\\,")
+      .replace(/\r?\n/g, "\\n");
+
+  const intensityLabelMap = {
+    easy: "GA1 (Locker / Ausdauer)",
+    moderate: "GA2 (Mittel / Zügig)",
+    hard: "EB / Wettkampftempo (Intensiv)"
+  };
+
+  // JS getDay(): 0 = Sonntag, 1 = Montag, ..., 6 = Samstag
+  const jsDayToPlanKey = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const now = new Date();
+  const dtStamp = formatIcsUtcStamp(now);
+  const startBase = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const week = planToExport.weekPlan || {};
+
+  // Prüfen, ob überhaupt aktive Trainingstage im Plan existieren
+  const hasAnyActiveDay = PLAN_WEEKDAYS.some((k) => {
+    const d = week[k];
+    if (!d) return false;
+    const rawDiscs = Array.isArray(d.disciplines) && d.disciplines.length > 0
+      ? d.disciplines.map(x => x === "mobility" ? "fitness" : x)
+      : (d.type === "brick" ? ["ride", "run"] : [d.type === "mobility" ? "fitness" : (d.type || "rest")]);
+    const activeDiscs = rawDiscs.filter(x => x !== "rest" && PLAN_DISCIPLINES[x]);
+    return activeDiscs.length > 0 || (d.duration && d.duration > 0);
+  });
+
+  const events = [];
+
+  for (let offset = 0; offset < totalDays; offset++) {
+    const eventDate = new Date(startBase.getFullYear(), startBase.getMonth(), startBase.getDate() + offset);
+    const nextDate = new Date(startBase.getFullYear(), startBase.getMonth(), startBase.getDate() + offset + 1);
+    const dayKey = jsDayToPlanKey[eventDate.getDay()];
+    const dayConf = PLAN_WEEKDAY_CONFIG[dayKey];
+    const day = week[dayKey] || { type: "rest", duration: 0, description: "Ruhetag", intensity: "easy" };
+
+    const rawDiscs = Array.isArray(day.disciplines) && day.disciplines.length > 0
+      ? day.disciplines.map(d => d === "mobility" ? "fitness" : d)
+      : (day.type === "brick" ? ["ride", "run"] : [day.type === "mobility" ? "fitness" : (day.type || "rest")]);
+    const disciplines = Array.from(new Set(rawDiscs.filter(d => PLAN_DISCIPLINES[d])));
+    if (disciplines.length === 0) disciplines.push("rest");
+
+    const sportDiscs = disciplines.filter(d => d !== "rest" && d !== "fitness");
+    const isRest = sportDiscs.length === 0 && !disciplines.includes("fitness") && !(day.duration > 0);
+
+    // Reine Ruhetage überspringen (sofern der Plan aktive Trainingstage enthält),
+    // damit der Handykalender übersichtlich nur die echten Einheiten zeigt.
+    if (isRest && hasAnyActiveDay) {
+      continue;
+    }
+
+    const icons = disciplines.map(d => PLAN_DISCIPLINES[d]?.icon || "🏋️").join("");
+    const discLabels = disciplines.map(d => PLAN_DISCIPLINES[d]?.label || d).join(" + ");
+
+    // Titel (SUMMARY) zusammenbauen
+    let titleCore = discLabels;
+    if (sportDiscs.length > 1) {
+      titleCore = `Koppel: ${discLabels}`;
+    } else if (Array.isArray(day.parts) && day.parts.length === 1 && day.parts[0]?.label) {
+      titleCore = day.parts[0].label;
+    } else if (day.description && day.description.length <= 42) {
+      titleCore = day.description;
+    }
+
+    const metaBits = [];
+    if (day.duration > 0) metaBits.push(`${day.duration} Min.`);
+    if (day.distance != null && day.distance !== "" && day.distance > 0) metaBits.push(`${day.distance} km`);
+    const metaSuffix = metaBits.length > 0 ? ` (${metaBits.join(" • ")})` : "";
+    const summary = `${icons} ${titleCore}${metaSuffix}`;
+
+    // Beschreibung (DESCRIPTION) zusammenbauen
+    const descLines = [];
+    descLines.push(`📋 TPA IronMan Trainingsplan – ${dayConf.full}`);
+    descLines.push(`Disziplin: ${discLabels}`);
+    if (day.duration > 0) descLines.push(`⏱️ Gesamtdauer: ${day.duration} Min.`);
+    if (day.distance != null && day.distance !== "" && day.distance > 0) {
+      descLines.push(`📍 Gesamtdistanz: ${day.distance} km`);
+    }
+    if (day.speed && day.speed.trim() !== "") {
+      descLines.push(`⚡ Ziel-Tempo / Pace: ${day.speed}`);
+    }
+    if (day.intensity) {
+      descLines.push(`🔥 Intensität: ${intensityLabelMap[day.intensity] || day.intensity}`);
+    }
+
+    if (Array.isArray(day.parts) && day.parts.length > 0) {
+      descLines.push("");
+      descLines.push("── Trainingsabschnitte ──");
+      day.parts.forEach((p, idx) => {
+        const pIcon = p.icon || (p.discId && PLAN_DISCIPLINES[p.discId]?.icon) || "•";
+        const pInt = p.intensity === "hard" ? "EB" : (p.intensity === "moderate" ? "GA2" : "GA1");
+        const pDetails = [];
+        if (p.duration > 0) pDetails.push(`${p.duration} Min.`);
+        if (p.distance != null && p.distance !== "" && p.distance > 0) pDetails.push(`${p.distance} km`);
+        if (p.speed) pDetails.push(p.speed);
+        pDetails.push(pInt);
+        descLines.push(`${idx + 1}. ${pIcon} ${p.label}: ${pDetails.join(" | ")}`);
+      });
+    }
+
+    const noteContent = (day.notes || day.description || "").trim();
+    if (noteContent) {
+      descLines.push("");
+      descLines.push(`📝 Hinweise zur Einheit:\n${noteContent}`);
+    }
+
+    if (planToExport.coachNote && planToExport.coachNote.trim() !== "") {
+      descLines.push("");
+      descLines.push(`💬 Wochenfokus:\n${planToExport.coachNote.trim()}`);
+    }
+
+    const startDateStr = formatIcsDate(eventDate);
+    const endDateStr = formatIcsDate(nextDate);
+    const uid = `tpa-ironman-${startDateStr}-${dayKey}@tpa-ironman.local`;
+
+    events.push([
+      "BEGIN:VEVENT",
+      `UID:${uid}`,
+      `DTSTAMP:${dtStamp}`,
+      `DTSTART;VALUE=DATE:${startDateStr}`,
+      `DTEND;VALUE=DATE:${endDateStr}`,
+      "TRANSP:TRANSPARENT",
+      `CATEGORIES:TPA IronMan,${escapeIcsText(discLabels)}`,
+      `SUMMARY:${escapeIcsText(summary)}`,
+      `DESCRIPTION:${escapeIcsText(descLines.join("\n"))}`,
+      "END:VEVENT"
+    ].join("\r\n"));
+  }
+
+  if (events.length === 0) {
+    showToast("Keine Trainingseinheiten zum Exportieren gefunden.", "error");
+    return;
+  }
+
+  const icsLines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//TPA IronMan//Trainingsplan Kalender-Export//DE",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "X-WR-CALNAME:TPA IronMan Trainingsplan",
+    ...events,
+    "END:VCALENDAR",
+    ""
+  ];
+
+  const icsContent = icsLines.join("\r\n");
+  const blob = new Blob([icsContent], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  const weeksLabel = weeksCount === 1 ? "1_Woche" : `${weeksCount}_Wochen`;
+  link.download = `TPA_IronMan_Trainingsplan_${weeksLabel}.ics`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+  showToast(
+    `📅 Trainingsplan für ${weeksCount} ${weeksCount === 1 ? "Woche" : "Wochen"} (${events.length} Einheiten) exportiert!`,
+    "success"
+  );
+}
+
+/**
  * Event-Listener für Buttons und Delegationen initialisieren.
  */
 let planListenersInitialized = false;
@@ -1469,6 +1680,7 @@ function setupAccountPlanListeners() {
   };
 
   bindClickOnce("account-plan-toggle-mode-btn", toggleAccountPlanMode);
+  bindClickOnce("account-plan-export-cal-btn", exportAccountPlanToCalendar);
   bindClickOnce("account-plan-save-btn", saveAccountPlan);
   bindClickOnce("account-plan-save-btn-top", saveAccountPlan);
 

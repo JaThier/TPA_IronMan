@@ -12,6 +12,10 @@ import {
 import { auth } from "./firebase-config.js";
 import { loadSecrets, clearSecrets } from "./config.js";
 import { showToast } from "./ui-helpers.js";
+import { initStrava, renderAnalysisView } from "./strava.js?v=2.8";
+import { initTrainingPlan, updateActivityCountPreview } from "./gemini.js?v=2.8";
+import { initHub, loadAndRenderHub } from "./hub.js?v=2.8";
+import { initAccount, loadAndRenderAccountPlan } from "./account.js?v=2.8";
 
 // ── DOM-Referenzen ─────────────────────────────────────────
 const loginScreen = document.getElementById("login-screen");
@@ -58,15 +62,15 @@ async function initApp(user) {
   showDashboard(user);
   initTabNavigation();
 
-  // Feature-Module laden (ohne wechselnden Query-String, damit ES-Module-Singletons erhalten bleiben)
-  import("./strava.js").then((m) => m.initStrava(user));
-  import("./gemini.js").then((m) => m.initTrainingPlan(user));
-  import("./hub.js").then((m) => m.initHub(user));
-  import("./account.js").then((m) => m.initAccount(user));
+  // Feature-Module initialisieren (statische ES-Module-Singletons)
+  initStrava(user);
+  initTrainingPlan(user);
+  initHub(user);
+  initAccount(user);
 }
 
 // ── Tab-Navigation ─────────────────────────────────────────
-const VALID_TABS = ["activities", "plan", "ai", "hub", "account"];
+const VALID_TABS = ["activities", "analysis", "plan", "ai", "hub", "account"];
 let tabNavInitialized = false;
 
 export function initTabNavigation() {
@@ -118,13 +122,15 @@ export function switchTab(tabName) {
     view.classList.toggle("hidden", !isTarget);
   });
 
-  // Falls zum Hub, Plan oder KI-Assistenz gewechselt wird, Daten aktualisieren
+  // Falls zum Hub, Analyse, Plan oder KI-Assistenz gewechselt wird, Daten aktualisieren
   if (tabName === "hub") {
-    import("./hub.js").then(m => m.loadAndRenderHub());
+    loadAndRenderHub?.();
+  } else if (tabName === "analysis") {
+    renderAnalysisView?.();
   } else if (tabName === "plan") {
-    import("./account.js").then(m => m.loadAndRenderAccountPlan?.());
+    loadAndRenderAccountPlan?.();
   } else if (tabName === "ai") {
-    import("./gemini.js").then(m => m.updateActivityCountPreview?.());
+    updateActivityCountPreview?.();
   }
 }
 

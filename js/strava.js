@@ -3,13 +3,13 @@
 // Strava OAuth 2.0 Flow, Aktivitäten-Abruf & Master-Detail Ansicht
 // ============================================================
 
-import { db } from "./firebase-config.js";
+import { auth, db } from "./firebase-config.js";
 import { getSecrets } from "./config.js";
 import {
   doc, getDoc, setDoc,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast } from "./ui-helpers.js";
-import { publishUserStatsToHub } from "./hub.js";
+import { publishUserStatsToHub } from "./hub.js?v=2.8";
 
 // ── Strava-Konstanten ──────────────────────────────────────
 const STRAVA_REDIRECT_URI = window.location.origin + window.location.pathname;
@@ -48,7 +48,20 @@ let currentSearchQuery = "";
 let syncDaysSetting = DAILY_AUTO_SYNC_DAYS; // Standard: 6 Monate (180 Tage)
 let detailChartInstance = null;
 let dailySyncIntervalId = null;
-const activitySpeedProfileCache = new Map(); // id -> Array<{ min: number, kmh: number | null, watts: number | null, hr: number | null }> | null
+let tokenRefreshPromise = null;
+const activitySpeedProfileCache = new Map(); // numId -> Array<{ min: number, kmh: number | null, watts: number | null, hr: number | null }>
+const inFlightProfilePromises = new Map();   // numId -> Promise<Array | null>
+const noStreamActivityIds = new Set();       // numId -> Aktivitäten, für die Strava nachweislich keine Stream-/Split-Daten hat
+
+// ── Zustand für den Reiter "Analyse" (Mehrfachauswahl) ─────
+const selectedAnalysisIds = new Set();
+let analysisInitialized = false;
+let analysisFilterSport = "all";
+let analysisSearchQuery = "";
+let analysisFilteredActivities = [];
+let analysisChartInstance = null;
+let analysisChartRenderToken = 0;
+let analysisSpeedUnitOverride = null; // null = Auto (min/km wenn nur Läufe ausgewählt, sonst km/h), "kmh" | "pace"
 
 // ── Hilfsfunktion: Sortierung nach Datum (neueste zuerst) ──
 /**
@@ -115,6 +128,7 @@ export async function initStrava(user) {
       window.stravaTokens = stravaTokens;
       selectedActivityId = allActivities[0]?.id || null;
       renderActivitiesView();
+      renderAnalysisView();
       // Im Hintergrund Hub synchronisieren (nur als heute frisch synchronisiert markieren, wenn bereits erledigt)
       await publishUserStatsToHub(allActivities, stravaTokens, { markDailySynced: !isDailySyncDue });
       // KI-Vorschau im Trainingsplan aktualisieren
@@ -217,8 +231,11 @@ async function handleStravaCallback(code) {
 
 // ── Token-Management ───────────────────────────────────────
 async function loadStravaTokens() {
+  const user = currentUser || auth?.currentUser;
+  if (!user?.uid) return;
+  currentUser = user;
   try {
-    const ref = doc(db, "users", currentUser.uid, "profile", "strava");
+    const ref = doc(db, "users", user.uid, "profile", "strava");
     const snap = await getDoc(ref);
     if (snap.exists()) {
       stravaTokens = snap.data();
@@ -230,39 +247,61 @@ async function loadStravaTokens() {
 }
 
 async function saveStravaTokens(tokens) {
-  const ref = doc(db, "users", currentUser.uid, "profile", "strava");
+  const user = currentUser || auth?.currentUser;
+  if (!user?.uid) return;
+  const ref = doc(db, "users", user.uid, "profile", "strava");
   await setDoc(ref, tokens);
 }
 
 async function getValidAccessToken() {
+  if (!stravaTokens?.accessToken && (currentUser || auth?.currentUser)) {
+    await loadStravaTokens();
+  }
+  if (!stravaTokens?.accessToken && !stravaTokens?.refreshToken) {
+    throw new Error("Keine Strava-Tokens verfügbar");
+  }
+
   const now = Math.floor(Date.now() / 1000);
 
-  if (stravaTokens.expiresAt > now + 300) {
+  if (stravaTokens.accessToken && (stravaTokens.expiresAt || 0) > now + 300) {
     return stravaTokens.accessToken;
   }
 
-  console.log("Strava Access Token abgelaufen – erneuere…");
-  const cfg = getStravaConfig();
-  const response = await fetch("https://www.strava.com/oauth/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      client_id: cfg.clientId,
-      client_secret: cfg.clientSecret,
-      grant_type: "refresh_token",
-      refresh_token: stravaTokens.refreshToken,
-    }),
-  });
+  if (tokenRefreshPromise) {
+    return tokenRefreshPromise;
+  }
 
-  if (!response.ok) throw new Error("Token-Refresh fehlgeschlagen");
+  tokenRefreshPromise = (async () => {
+    try {
+      console.log("Strava Access Token abgelaufen – erneuere…");
+      const cfg = getStravaConfig();
+      const response = await fetch("https://www.strava.com/oauth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: cfg.clientId,
+          client_secret: cfg.clientSecret,
+          grant_type: "refresh_token",
+          refresh_token: stravaTokens.refreshToken,
+        }),
+      });
 
-  const data = await response.json();
-  stravaTokens.accessToken = data.access_token;
-  stravaTokens.refreshToken = data.refresh_token;
-  stravaTokens.expiresAt = data.expires_at;
+      if (!response.ok) throw new Error("Token-Refresh fehlgeschlagen");
 
-  await saveStravaTokens(stravaTokens);
-  return stravaTokens.accessToken;
+      const data = await response.json();
+      stravaTokens.accessToken = data.access_token;
+      stravaTokens.refreshToken = data.refresh_token || stravaTokens.refreshToken;
+      stravaTokens.expiresAt = data.expires_at;
+      window.stravaTokens = stravaTokens;
+
+      await saveStravaTokens(stravaTokens);
+      return stravaTokens.accessToken;
+    } finally {
+      tokenRefreshPromise = null;
+    }
+  })();
+
+  return tokenRefreshPromise;
 }
 
 /**
@@ -378,6 +417,7 @@ export async function fetchAndDisplayActivities(days = syncDaysSetting, options 
       console.log(`[strava] Täglicher 6-Monate-Sync abgeschlossen: ${allActivities.length} Aktivitäten geladen.`);
     }
     renderActivitiesView();
+    renderAnalysisView();
     // KI-Vorschau im Trainingsplan aktualisieren
     window.updateAiPreview?.();
 
@@ -390,6 +430,7 @@ export async function fetchAndDisplayActivities(days = syncDaysSetting, options 
       showConnectButton();
     } else {
       renderActivitiesView();
+      renderAnalysisView();
     }
   }
 }
@@ -851,19 +892,29 @@ function getActivityAvgHr(a) {
  * Gibt null zurück, falls nur die Durchschnittswerte vorliegen.
  */
 function extractProfileFromData(activity, streamsData = null, detailData = null) {
-  // 1. Aus Streams (time + velocity_smooth / distance / watts / heartrate)
+  // 1. Aus Streams (time + velocity_smooth / distance / watts / heartrate / moving)
   const timeStream = streamsData?.time?.data || (Array.isArray(streamsData) ? streamsData.find(s => s.type === "time")?.data : null);
   const velStream = streamsData?.velocity_smooth?.data || (Array.isArray(streamsData) ? streamsData.find(s => s.type === "velocity_smooth")?.data : null);
   const distStream = streamsData?.distance?.data || (Array.isArray(streamsData) ? streamsData.find(s => s.type === "distance")?.data : null);
   const wattsStream = streamsData?.watts?.data || (Array.isArray(streamsData) ? streamsData.find(s => s.type === "watts")?.data : null);
   const hrStream = streamsData?.heartrate?.data || (Array.isArray(streamsData) ? streamsData.find(s => s.type === "heartrate")?.data : null);
+  const movingStream = streamsData?.moving?.data || (Array.isArray(streamsData) ? streamsData.find(s => s.type === "moving")?.data : null);
 
   const hasAnyMetricStream = Array.isArray(velStream) || Array.isArray(distStream) || Array.isArray(wattsStream) || Array.isArray(hrStream);
 
   if (Array.isArray(timeStream) && timeStream.length > 1 && hasAnyMetricStream) {
     const rawPoints = [];
+    let cumActiveSec = 0;
+
     for (let i = 0; i < timeStream.length; i++) {
-      const tMin = (timeStream[i] || 0) / 60;
+      if (i > 0) {
+        const rawDt = Math.max(0, (timeStream[i] || 0) - (timeStream[i - 1] || 0));
+        const isMoving = Array.isArray(movingStream) ? Boolean(movingStream[i]) : true;
+        // Lange Standpausen (z. B. Uhr pausiert / Ampelstopp) aus der aktiven Bewegungszeit herausfiltern
+        const activeDt = isMoving ? Math.min(rawDt, 30) : 0;
+        cumActiveSec += activeDt;
+      }
+
       let kmh = null;
       if (Array.isArray(velStream) && velStream[i] != null) {
         kmh = Math.max(0, velStream[i] * 3.6);
@@ -878,63 +929,69 @@ function extractProfileFromData(activity, streamsData = null, detailData = null)
       const watts = Array.isArray(wattsStream) && wattsStream[i] != null ? Math.max(0, parseFloat(wattsStream[i])) : null;
       const hr = Array.isArray(hrStream) && hrStream[i] != null && hrStream[i] > 0 ? parseFloat(hrStream[i]) : null;
 
-      rawPoints.push({ min: tMin, kmh, watts, hr });
+      rawPoints.push({ sec: cumActiveSec, kmh, watts, hr });
     }
 
-    const avgBucketField = (arr, startIdx, endIdx, field) => {
-      let sum = 0;
-      let count = 0;
-      for (let j = startIdx; j < endIdx; j++) {
-        const v = arr[j][field];
-        if (typeof v === "number" && !isNaN(v)) {
-          sum += v;
-          count++;
+    // Zeitachse auf die tatsächliche Bewegungsdauer (moving_time) normieren, falls vorhanden
+    const targetDurSec = parseFloat(activity?.moving_time) || parseFloat(activity?.elapsed_time) || cumActiveSec;
+    const scaleRatio = (cumActiveSec > 0 && targetDurSec > 0) ? (targetDurSec / cumActiveSec) : 1;
+    rawPoints.forEach(p => {
+      p.min = (p.sec * scaleRatio) / 60;
+    });
+
+    // Einheitliches 0,5-Minuten-Zeitraster (0, 0.5, 1.0, 1.5, ...) OHNE Mittelung über Zeit-Buckets:
+    // Zu jedem Zeitpunkt tMin wird direkt der Momentanwert an diesem Zeitpunkt abgegriffen.
+    const totalDurationMin = Math.max(1, Math.round(((targetDurSec || 60) / 60) * 2) / 2);
+    const timeStepMin = 0.5;
+    const sampled = [];
+    let cursor = 0;
+
+    const pickValueAtMin = (tMin, field) => {
+      // Nächstliegenden / interpolierten Momentanwert zum Zeitpunkt tMin ermitteln (keine Bucket-Mittelung über die Zeit)
+      const p0 = rawPoints[cursor];
+      const p1 = rawPoints[Math.min(rawPoints.length - 1, cursor + 1)];
+      const v0 = p0?.[field];
+      const v1 = p1?.[field];
+      if (typeof v0 === "number" && !isNaN(v0) && typeof v1 === "number" && !isNaN(v1)) {
+        const span = p1.min - p0.min;
+        if (span > 0 && tMin >= p0.min && tMin <= p1.min) {
+          const ratio = (tMin - p0.min) / span;
+          return v0 + ratio * (v1 - v0);
         }
       }
-      return count > 0 ? Math.round((sum / count) * 100) / 100 : null;
+      if (typeof v0 === "number" && !isNaN(v0)) return v0;
+      if (typeof v1 === "number" && !isNaN(v1)) return v1;
+      return null;
     };
 
-    // Auf ca. 40 Stützpunkte glätten / herunterbrechen für saubere Darstellung
-    const targetBuckets = 40;
-    if (rawPoints.length <= targetBuckets) {
-      return rawPoints.map(p => ({
-        min: Math.round(p.min * 10) / 10,
-        kmh: p.kmh != null ? Math.round(p.kmh * 100) / 100 : null,
-        watts: p.watts != null ? Math.round(p.watts * 10) / 10 : null,
-        hr: p.hr != null ? Math.round(p.hr * 10) / 10 : null,
-      }));
-    }
-    const step = rawPoints.length / targetBuckets;
-    const sampled = [];
-    for (let b = 0; b < targetBuckets; b++) {
-      const startIdx = Math.floor(b * step);
-      const endIdx = Math.min(rawPoints.length, Math.floor((b + 1) * step));
-      if (endIdx <= startIdx) continue;
-      const midMin = rawPoints[Math.floor((startIdx + endIdx - 1) / 2)].min;
+    for (let t = 0; t <= totalDurationMin + 1e-6; t += timeStepMin) {
+      const tMin = Math.round(t * 10) / 10;
+      while (cursor < rawPoints.length - 2 && rawPoints[cursor + 1].min <= tMin) {
+        cursor++;
+      }
+      const kmhVal = pickValueAtMin(tMin, "kmh");
+      const wattsVal = pickValueAtMin(tMin, "watts");
+      const hrVal = pickValueAtMin(tMin, "hr");
+
       sampled.push({
-        min: Math.round(midMin * 10) / 10,
-        kmh: avgBucketField(rawPoints, startIdx, endIdx, "kmh"),
-        watts: avgBucketField(rawPoints, startIdx, endIdx, "watts"),
-        hr: avgBucketField(rawPoints, startIdx, endIdx, "hr"),
-      });
-    }
-    // Startpunkt bei 0 Min ergänzen, falls nötig
-    if (sampled.length > 0 && sampled[0].min > 0) {
-      sampled.unshift({
-        min: 0,
-        kmh: sampled[0].kmh,
-        watts: sampled[0].watts,
-        hr: sampled[0].hr,
+        min: tMin,
+        kmh: kmhVal != null ? Math.round(kmhVal * 100) / 100 : null,
+        watts: wattsVal != null ? Math.round(wattsVal * 10) / 10 : null,
+        hr: hrVal != null ? Math.round(hrVal * 10) / 10 : null,
       });
     }
     return sampled;
   }
 
-  // 2. Aus Splits oder Laps (falls vorhanden; Laps enthalten oft auch average_watts und average_heartrate)
-  const splits = (Array.isArray(detailData?.laps) && detailData.laps.length > 1 ? detailData.laps : null)
-    || (Array.isArray(detailData?.splits_metric) && detailData.splits_metric.length > 1 ? detailData.splits_metric : null)
-    || (Array.isArray(activity?.laps) && activity.laps.length > 1 ? activity.laps : null)
-    || (Array.isArray(activity?.splits_metric) && activity.splits_metric.length > 1 ? activity.splits_metric : null);
+  // 2. Aus Splits oder Laps (die Quelle mit der feineren Auflösung / mehr Messpunkten bevorzugen)
+  const candidates = [
+    detailData?.splits_metric,
+    detailData?.laps,
+    activity?.splits_metric,
+    activity?.laps,
+  ].filter(arr => Array.isArray(arr) && arr.length > 1);
+  candidates.sort((a, b) => b.length - a.length);
+  const splits = candidates[0] || null;
 
   if (Array.isArray(splits) && splits.length > 1) {
     const points = [];
@@ -953,7 +1010,7 @@ function extractProfileFromData(activity, streamsData = null, detailData = null)
         points.push({ min: 0, kmh: Math.round(spd * 100) / 100, watts: w, hr });
       }
       cumSec += dur;
-      points.push({ min: Math.round((cumSec / 60) * 10) / 10, kmh: Math.round(spd * 100) / 100, watts: w, hr });
+      points.push({ min: Math.round((cumSec / 60) * 100) / 100, kmh: Math.round(spd * 100) / 100, watts: w, hr });
     });
     if (points.length > 1) return points;
   }
@@ -966,58 +1023,74 @@ function extractProfileFromData(activity, streamsData = null, detailData = null)
  */
 async function fetchActivitySpeedProfile(activity) {
   if (!activity?.id) return null;
-  if (activitySpeedProfileCache.has(activity.id)) {
-    return activitySpeedProfileCache.get(activity.id);
+  const numId = Number(activity.id);
+
+  if (activitySpeedProfileCache.has(numId)) {
+    const cached = activitySpeedProfileCache.get(numId);
+    if (Array.isArray(cached) && cached.length > 1) {
+      return cached;
+    }
+  }
+  if (noStreamActivityIds.has(numId)) {
+    return null;
   }
 
   // Prüfen ob bereits im Objekt selbst Splits/Laps vorhanden sind
   const localProfile = extractProfileFromData(activity);
-  if (localProfile) {
-    activitySpeedProfileCache.set(activity.id, localProfile);
+  if (localProfile && localProfile.length > 1) {
+    activitySpeedProfileCache.set(numId, localProfile);
     return localProfile;
   }
 
-  if (!stravaTokens?.accessToken) {
-    activitySpeedProfileCache.set(activity.id, null);
+  if (inFlightProfilePromises.has(numId)) {
+    return inFlightProfilePromises.get(numId);
+  }
+
+  const fetchPromise = (async () => {
+    try {
+      const token = await getValidAccessToken();
+      if (!token) return null;
+
+      // 1. Versuch: Strava Streams API (time, velocity_smooth, distance, watts, heartrate, moving)
+      const streamUrl = `${STRAVA_API_BASE}/activities/${numId}/streams?keys=time,velocity_smooth,distance,watts,heartrate,moving&key_by_type=true`;
+      const res = await fetch(streamUrl, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (res.ok) {
+        const streamsData = await res.json();
+        const profile = extractProfileFromData(activity, streamsData, null);
+        if (profile && profile.length > 1) {
+          activitySpeedProfileCache.set(numId, profile);
+          return profile;
+        }
+      }
+
+      // 2. Versuch: Einzelne Aktivität abrufen für splits_metric / laps
+      const detailUrl = `${STRAVA_API_BASE}/activities/${numId}`;
+      const detailRes = await fetch(detailUrl, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (detailRes.ok) {
+        const detailData = await detailRes.json();
+        const profile = extractProfileFromData(activity, null, detailData);
+        if (profile && profile.length > 1) {
+          activitySpeedProfileCache.set(numId, profile);
+          return profile;
+        }
+        // Aktivität existiert, besitzt aber weder Streams noch Splits (z. B. manueller Eintrag)
+        noStreamActivityIds.add(numId);
+      }
+    } catch (err) {
+      console.warn(`[strava] Konnte Detail-Verlauf für Aktivität ${numId} nicht laden:`, err);
+    } finally {
+      inFlightProfilePromises.delete(numId);
+    }
     return null;
-  }
+  })();
 
-  try {
-    const token = await getValidAccessToken();
-    // 1. Versuch: Strava Streams API (time, velocity_smooth, distance, watts, heartrate)
-    const streamUrl = `${STRAVA_API_BASE}/activities/${activity.id}/streams?keys=time,velocity_smooth,distance,watts,heartrate&key_by_type=true`;
-    const res = await fetch(streamUrl, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
-    if (res.ok) {
-      const streamsData = await res.json();
-      const profile = extractProfileFromData(activity, streamsData, null);
-      if (profile && profile.length > 1) {
-        activitySpeedProfileCache.set(activity.id, profile);
-        return profile;
-      }
-    }
-
-    // 2. Versuch: Einzelne Aktivität abrufen für laps / splits_metric
-    const detailUrl = `${STRAVA_API_BASE}/activities/${activity.id}`;
-    const detailRes = await fetch(detailUrl, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if (detailRes.ok) {
-      const detailData = await detailRes.json();
-      const profile = extractProfileFromData(activity, null, detailData);
-      if (profile && profile.length > 1) {
-        activitySpeedProfileCache.set(activity.id, profile);
-        return profile;
-      }
-    }
-  } catch (err) {
-    console.warn("[strava] Konnte Detail-Verlauf nicht laden, nutze Durchschnittsgerade:", err);
-  }
-
-  activitySpeedProfileCache.set(activity.id, null);
-  return null;
+  inFlightProfilePromises.set(numId, fetchPromise);
+  return fetchPromise;
 }
 
 /**
@@ -1272,7 +1345,8 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
       borderColor: "#e8391e",
       backgroundColor: "rgba(232, 57, 30, 0.14)",
       borderWidth: 2.5,
-      pointRadius: hasDetailedPrimary ? 2 : 0,
+      pointRadius: 0,
+      pointHitRadius: 10,
       pointHoverRadius: 5,
       tension: hasDetailedPrimary ? 0.3 : 0,
       fill: runMode ? "start" : true,
@@ -1291,6 +1365,7 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
       borderWidth: 2,
       borderDash: [6, 4],
       pointRadius: 0,
+      pointHitRadius: 10,
       pointHoverRadius: 4,
       tension: 0.25,
       fill: false,
@@ -1309,7 +1384,8 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
       borderColor: "#ec4899",
       backgroundColor: "rgba(236, 72, 153, 0.08)",
       borderWidth: 2,
-      pointRadius: hasDetailedHr ? 1.5 : 0,
+      pointRadius: 0,
+      pointHitRadius: 10,
       pointHoverRadius: 4,
       tension: hasDetailedHr ? 0.3 : 0,
       fill: false,
@@ -1328,6 +1404,7 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
       borderWidth: 1.75,
       borderDash: [3, 3],
       pointRadius: 0,
+      pointHitRadius: 10,
       pointHoverRadius: 4,
       tension: 0.25,
       fill: false,
@@ -1500,9 +1577,7 @@ function escapeHtml(str) {
 }
 
 function showConnectButton() {
-  const container = document.getElementById("strava-content");
-  if (!container) return;
-  container.innerHTML = `
+  const html = `
     <div class="strava-connect-card">
       <span class="connect-icon">🚴‍♂️</span>
       <h3>Verbinde deinen Strava-Account</h3>
@@ -1512,6 +1587,10 @@ function showConnectButton() {
       </button>
     </div>
   `;
+  const container = document.getElementById("strava-content");
+  if (container) container.innerHTML = html;
+  const analysisContainer = document.getElementById("analysis-content");
+  if (analysisContainer) analysisContainer.innerHTML = html;
 }
 
 function showStravaLoading(text = "Laden…") {
@@ -1532,6 +1611,778 @@ function renderStravaSkeleton() {
     <div class="skeleton" style="height:70px; margin-bottom:1rem; border-radius:12px;"></div>
     <div class="skeleton" style="height:320px; border-radius:12px;"></div>
   `;
+}
+
+// ════════════════════════════════════════════════════════════
+// REITER: ANALYSE (Mehrfachauswahl & Geschwindigkeits-/HF-Schnitt)
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Filtert die Aktivitäten für den Analyse-Tab.
+ */
+function applyAnalysisFilters() {
+  analysisFilteredActivities = sortActivitiesDesc(allActivities).filter((a) => {
+    let matchesSport = analysisFilterSport === "all";
+    if (!matchesSport) {
+      if (analysisFilterSport === "Ride") matchesSport = isBike(a);
+      else if (analysisFilterSport === "Run") matchesSport = isRun(a);
+      else if (analysisFilterSport === "Swim") matchesSport = isSwim(a);
+      else matchesSport = (a.type === analysisFilterSport || a.sport_type === analysisFilterSport);
+    }
+    const matchesSearch = !analysisSearchQuery || (a.name || "").toLowerCase().includes(analysisSearchQuery);
+    return matchesSport && matchesSearch;
+  });
+
+  // Beim allerersten Öffnen standardmäßig die letzten 3 Aktivitäten derselben Sportart (oder die letzten 3) vorauswählen
+  if (!analysisInitialized && allActivities.length > 0) {
+    analysisInitialized = true;
+    const sorted = sortActivitiesDesc(allActivities);
+    const firstAct = sorted[0];
+    const sameSportPool = sorted.filter(a => {
+      if (isBike(firstAct)) return isBike(a);
+      if (isRun(firstAct)) return isRun(a);
+      if (isSwim(firstAct)) return isSwim(a);
+      return true;
+    });
+    const initialPick = (sameSportPool.length >= 2 ? sameSportPool : sorted).slice(0, 3);
+    initialPick.forEach(a => {
+      if (a?.id != null) selectedAnalysisIds.add(Number(a.id));
+    });
+  }
+}
+
+let analysisLoadingPromise = null;
+
+/**
+ * Rendert die Hauptansicht des Analyse-Tabs (Master-Detail mit Mehrfachauswahl).
+ */
+export async function renderAnalysisView() {
+  const container = document.getElementById("analysis-content");
+  if (!container) return;
+
+  if (!currentUser && auth?.currentUser) {
+    currentUser = auth.currentUser;
+  }
+
+  if (allActivities.length === 0 && Array.isArray(window.stravaActivities) && window.stravaActivities.length > 0) {
+    allActivities = sortActivitiesDesc(window.stravaActivities);
+  }
+
+  if (allActivities.length === 0 && currentUser) {
+    if (!analysisLoadingPromise) {
+      analysisLoadingPromise = (async () => {
+        try {
+          if (!stravaTokens?.accessToken) {
+            await loadStravaTokens();
+          }
+          if (stravaTokens?.accessToken && allActivities.length === 0) {
+            const cachedMeta = await loadCachedActivitiesMeta();
+            if (Array.isArray(cachedMeta.data) && cachedMeta.data.length > 0) {
+              allActivities = sortActivitiesDesc(cachedMeta.data);
+              window.stravaActivities = allActivities;
+            }
+          }
+        } catch (err) {
+          console.warn("[strava] Fehler beim Nachladen der Analyse-Aktivitäten:", err);
+        } finally {
+          analysisLoadingPromise = null;
+        }
+      })();
+    }
+    await analysisLoadingPromise;
+  }
+
+  if (!stravaTokens?.accessToken && allActivities.length === 0) {
+    showConnectButton();
+    return;
+  }
+
+  applyAnalysisFilters();
+
+  container.innerHTML = `
+    <div class="activities-master-detail analysis-master-detail">
+      <!-- Linke Spalte: Scrollbare Aktivitäten-Liste mit Mehrfachauswahl -->
+      <div class="activities-list-pane analysis-list-pane">
+        <div class="list-filters-header">
+          <div class="sport-filter-chips" id="analysis-sport-chips">
+            <button type="button" class="chip ${analysisFilterSport === 'all' ? 'active' : ''}" data-sport="all">Alle (${allActivities.length})</button>
+            <button type="button" class="chip ${analysisFilterSport === 'Run' ? 'active' : ''}" data-sport="Run">🏃 Laufen</button>
+            <button type="button" class="chip ${analysisFilterSport === 'Ride' ? 'active' : ''}" data-sport="Ride">🚴 Rad</button>
+            <button type="button" class="chip ${analysisFilterSport === 'Swim' ? 'active' : ''}" data-sport="Swim">🏊 Schwimmen</button>
+          </div>
+
+          <input
+            type="text"
+            id="analysis-search-input"
+            placeholder="Aktivität für Analyse suchen..."
+            value="${escapeHtml(analysisSearchQuery)}"
+            class="activity-search-box"
+          />
+
+          <div class="analysis-selection-toolbar">
+            <span class="analysis-selected-badge" id="analysis-selected-count-badge">
+              ${selectedAnalysisIds.size} ausgewählt
+            </span>
+            <div class="analysis-selection-actions">
+              <button type="button" class="btn-analysis-action" id="btn-analysis-select-filtered" title="Alle aktuell gefilterten Aktivitäten auswählen">
+                ✓ Gefilterte wählen
+              </button>
+              <button type="button" class="btn-analysis-action btn-analysis-clear" id="btn-analysis-clear-selection" title="Auswahl komplett aufheben">
+                ✕ Leeren
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="activities-scrollable-list" id="analysis-scroll-container">
+          <!-- Wird per renderAnalysisListItems() befüllt -->
+        </div>
+      </div>
+
+      <!-- Rechte Spalte: Aggregierte Werte & Durchschnitts-Diagramm -->
+      <div class="activity-detail-pane" id="analysis-detail-container">
+        <!-- Wird per renderAnalysisDetail() befüllt -->
+      </div>
+    </div>
+  `;
+
+  setupAnalysisListeners();
+  renderAnalysisListItems();
+  renderAnalysisDetail();
+}
+
+/**
+ * Richtet die Filter-, Such- und Auswahl-Listener im Analyse-Tab ein.
+ */
+function setupAnalysisListeners() {
+  const chips = document.querySelectorAll("#analysis-sport-chips .chip");
+  chips.forEach((c) => {
+    c.addEventListener("click", () => {
+      chips.forEach(chip => chip.classList.remove("active"));
+      c.classList.add("active");
+      analysisFilterSport = c.dataset.sport;
+      applyAnalysisFilters();
+      renderAnalysisListItems();
+    });
+  });
+
+  const searchInput = document.getElementById("analysis-search-input");
+  searchInput?.addEventListener("input", (e) => {
+    analysisSearchQuery = e.target.value.toLowerCase().trim();
+    applyAnalysisFilters();
+    renderAnalysisListItems();
+  });
+
+  document.getElementById("btn-analysis-select-filtered")?.addEventListener("click", () => {
+    analysisFilteredActivities.forEach(a => {
+      if (a?.id != null) selectedAnalysisIds.add(Number(a.id));
+    });
+    updateAnalysisCountBadge();
+    renderAnalysisListItems();
+    renderAnalysisDetail();
+  });
+
+  document.getElementById("btn-analysis-clear-selection")?.addEventListener("click", () => {
+    selectedAnalysisIds.clear();
+    updateAnalysisCountBadge();
+    renderAnalysisListItems();
+    renderAnalysisDetail();
+  });
+}
+
+function updateAnalysisCountBadge() {
+  const badge = document.getElementById("analysis-selected-count-badge");
+  if (badge) {
+    badge.textContent = `${selectedAnalysisIds.size} ausgewählt`;
+  }
+}
+
+/**
+ * Rendert die scrollbare Liste der Aktivitäten mit Checkbox-Mehrfachauswahl.
+ */
+function renderAnalysisListItems() {
+  const container = document.getElementById("analysis-scroll-container");
+  if (!container) return;
+
+  const sortedList = sortActivitiesDesc(analysisFilteredActivities);
+
+  if (sortedList.length === 0) {
+    container.innerHTML = `
+      <div class="empty-list-notice">
+        <span>🔍</span>
+        <p>Keine Aktivitäten für die aktuellen Filter gefunden.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = sortedList.map((a) => {
+    const numId = Number(a.id);
+    const isSelected = selectedAnalysisIds.has(numId);
+    const icon = getSportIcon(a.type);
+    const dateStr = new Date(a.start_date_local || a.start_date).toLocaleDateString("de-DE", {
+      day: "2-digit", month: "short", year: "numeric"
+    });
+    const distKm = ((parseFloat(a.distance) || 0) / 1000).toFixed(1);
+    const durationMin = Math.round((parseFloat(a.moving_time) || 0) / 60);
+    const avgKmh = getActivityAvgKmh(a);
+    const avgHr = getActivityAvgHr(a);
+    const speedDisplay = isRun(a)
+      ? `${formatPaceMinKm(kmhToPaceMinKm(avgKmh))} /km`
+      : `${avgKmh.toFixed(1)} km/h`;
+    const badgeClass = isBike(a) ? "badge-ride" : (isRun(a) ? "badge-run" : (isSwim(a) ? "badge-swim" : "badge-other"));
+    const badgeText = a.type === "VirtualRide" ? "VirtualRide" : (a.type || "Other");
+
+    return `
+      <div class="activity-card-item analysis-card-item ${isSelected ? 'selected' : ''}" data-id="${numId}">
+        <span class="analysis-check-box ${isSelected ? 'checked' : ''}" aria-hidden="true">${isSelected ? '✓' : ''}</span>
+        <span class="item-icon">${icon}</span>
+        <div class="item-content">
+          <div class="item-name">${escapeHtml(a.name)}</div>
+          <div class="item-meta">
+            ${dateStr} &bull; ${durationMin} Min. &bull; ⚡ ${speedDisplay}
+            ${avgHr ? ` &bull; ❤️ ${Math.round(avgHr)}` : ''}
+          </div>
+        </div>
+        <div class="item-right">
+          <div class="item-dist">${distKm} km</div>
+          <span class="item-badge ${badgeClass}">${badgeText}</span>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  container.querySelectorAll(".analysis-card-item").forEach((el) => {
+    el.addEventListener("click", () => {
+      const id = Number(el.dataset.id);
+      if (selectedAnalysisIds.has(id)) {
+        selectedAnalysisIds.delete(id);
+        el.classList.remove("selected");
+        const cb = el.querySelector(".analysis-check-box");
+        if (cb) { cb.classList.remove("checked"); cb.textContent = ""; }
+      } else {
+        selectedAnalysisIds.add(id);
+        el.classList.add("selected");
+        const cb = el.querySelector(".analysis-check-box");
+        if (cb) { cb.classList.add("checked"); cb.textContent = "✓"; }
+      }
+      updateAnalysisCountBadge();
+      renderAnalysisDetail();
+    });
+  });
+}
+
+/**
+ * Rendert die rechte Auswertungs-Spalte für alle ausgewählten Aktivitäten.
+ */
+function renderAnalysisDetail() {
+  const container = document.getElementById("analysis-detail-container");
+  if (!container) return;
+
+  const selectedActs = sortActivitiesDesc(
+    allActivities.filter(a => selectedAnalysisIds.has(Number(a.id)))
+  );
+
+  if (selectedActs.length === 0) {
+    if (analysisChartInstance) {
+      analysisChartInstance.destroy();
+      analysisChartInstance = null;
+    }
+    container.innerHTML = `
+      <div class="detail-placeholder">
+        <span style="font-size:3rem;">📈</span>
+        <h3>Aktivitäten zur Analyse auswählen</h3>
+        <p>Klicke links in der Liste auf beliebig viele Trainingseinheiten, um deren Geschwindigkeits- und Herzfrequenzschnitt im gemeinsamen Diagramm auszuwerten.</p>
+      </div>
+    `;
+    return;
+  }
+
+  // Aggregierte Kennzahlen über die Auswahl berechnen
+  const count = selectedActs.length;
+  const totalDistKm = selectedActs.reduce((s, a) => s + ((parseFloat(a.distance) || 0) / 1000), 0);
+  const avgDistKm = totalDistKm / count;
+
+  const totalMovingSec = selectedActs.reduce((s, a) => s + (parseFloat(a.moving_time) || 0), 0);
+  const avgMovingSec = Math.round(totalMovingSec / count);
+
+  const avgKmhMean = selectedActs.reduce((s, a) => s + getActivityAvgKmh(a), 0) / count;
+  const avgKmhWeighted = totalMovingSec > 0 ? (totalDistKm / (totalMovingSec / 3600)) : avgKmhMean;
+  const avgKmh = avgKmhMean > 0 ? avgKmhMean : avgKmhWeighted;
+  const avgPaceDecimal = kmhToPaceMinKm(avgKmh, 6.0);
+  const avgPaceFormatted = `${formatPaceMinKm(avgPaceDecimal)} min/km`;
+
+  const actsWithHr = selectedActs.filter(a => getActivityAvgHr(a) != null);
+  const avgHr = actsWithHr.length > 0
+    ? actsWithHr.reduce((s, a) => s + getActivityAvgHr(a), 0) / actsWithHr.length
+    : null;
+  const maxHrVals = selectedActs.map(a => parseFloat(a.max_heartrate)).filter(v => !isNaN(v) && v > 0);
+  const peakMaxHr = maxHrVals.length > 0 ? Math.round(Math.max(...maxHrVals)) : null;
+
+  const totalElev = Math.round(selectedActs.reduce((s, a) => s + (parseFloat(a.total_elevation_gain) || 0), 0));
+  const avgElev = Math.round(totalElev / count);
+
+  const allRuns = selectedActs.every(a => isRun(a));
+  const effectivePaceMode = analysisSpeedUnitOverride === "pace" || (analysisSpeedUnitOverride === null && allRuns);
+
+  // Zeitraum der Auswahl
+  const timestamps = selectedActs.map(a => parseActivityDate(a)).filter(t => t > 0);
+  const minDateStr = timestamps.length > 0
+    ? new Date(Math.min(...timestamps)).toLocaleDateString("de-DE", { day: "2-digit", month: "short", year: "numeric" })
+    : "–";
+  const maxDateStr = timestamps.length > 0
+    ? new Date(Math.max(...timestamps)).toLocaleDateString("de-DE", { day: "2-digit", month: "short", year: "numeric" })
+    : "–";
+  const dateRangeLabel = minDateStr === maxDateStr ? minDateStr : `${minDateStr} – ${maxDateStr}`;
+
+  // Icons der enthaltenen Sportarten
+  const uniqueIcons = Array.from(new Set(selectedActs.map(a => getSportIcon(a.type)))).join(" ");
+
+  // Kompakte Chips der ausgewählten Einheiten
+  const selectedPillsHtml = selectedActs.map(a => {
+    const dStr = new Date(a.start_date_local || a.start_date).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+    const aKmh = getActivityAvgKmh(a);
+    const aHr = getActivityAvgHr(a);
+    const spdStr = isRun(a) ? `${formatPaceMinKm(kmhToPaceMinKm(aKmh))} min/km` : `${aKmh.toFixed(1)} km/h`;
+    return `
+      <span class="analysis-selected-activity-pill" data-remove-id="${a.id}" title="Klicken, um ${escapeHtml(a.name)} aus der Auswahl zu entfernen">
+        <span>${getSportIcon(a.type)}</span>
+        <strong>${escapeHtml(a.name)}</strong>
+        <span class="pill-meta">(${dStr} • ${spdStr}${aHr ? ` • ❤️ ${Math.round(aHr)}` : ''})</span>
+        <span class="pill-remove">✕</span>
+      </span>
+    `;
+  }).join("");
+
+  container.innerHTML = `
+    <div class="detail-card">
+      <!-- Detail Header -->
+      <div class="detail-header">
+        <div class="detail-title-group">
+          <span class="detail-type-icon">${uniqueIcons || '📈'}</span>
+          <div>
+            <h2 class="detail-activity-name">Schnitt aus ${count} ${count === 1 ? 'ausgewählter Aktivität' : 'ausgewählten Aktivitäten'}</h2>
+            <div class="detail-date-time">
+              📅 Zeitraum der Auswahl: ${dateRangeLabel} &bull; ❤️ ${actsWithHr.length}/${count} mit Herzfrequenzdaten
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-actions">
+          <div class="hub-chart-filter-pills" id="analysis-unit-toggle">
+            <button type="button" class="hub-filter-pill ${!effectivePaceMode ? 'active' : ''}" data-unit="kmh">
+              🚀 km/h
+            </button>
+            <button type="button" class="hub-filter-pill ${effectivePaceMode ? 'active' : ''}" data-unit="pace">
+              🏃 min/km (Pace)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Haupt-KPIs der Auswahl -->
+      <div class="detail-kpis">
+        <div class="detail-kpi-card">
+          <div class="kpi-label">${effectivePaceMode ? 'Ø PACE (SCHNITT)' : 'Ø GESCHWINDIGKEIT'}</div>
+          <div class="kpi-val" id="analysis-kpi-speed-val">
+            ${effectivePaceMode
+              ? `${formatPaceMinKm(avgPaceDecimal)} <span class="kpi-unit">min/km</span>`
+              : `${avgKmh.toFixed(1)} <span class="kpi-unit">km/h</span>`}
+          </div>
+          <div class="kpi-sub-hint" id="analysis-kpi-speed-hint">${effectivePaceMode ? `entspricht Ø ${avgKmh.toFixed(1)} km/h` : `entspricht Ø ${avgPaceFormatted}`}</div>
+        </div>
+
+        <div class="detail-kpi-card">
+          <div class="kpi-label">❤️ Ø HERZFREQUENZ</div>
+          <div class="kpi-val" id="analysis-kpi-hr-val">${avgHr != null ? `${Math.round(avgHr)} <span class="kpi-unit">bpm</span>` : '–'}</div>
+          <div class="kpi-sub-hint">${peakMaxHr ? `Spitzenwert: ${peakMaxHr} bpm` : 'Keine HF-Spitzenwerte'}</div>
+        </div>
+
+        <div class="detail-kpi-card">
+          <div class="kpi-label">Ø DISTANZ JE EINHEIT</div>
+          <div class="kpi-val">${avgDistKm.toFixed(2)} <span class="kpi-unit">km</span></div>
+          <div class="kpi-sub-hint">Gesamt: ${totalDistKm.toFixed(1)} km</div>
+        </div>
+
+        <div class="detail-kpi-card">
+          <div class="kpi-label">Ø BEWEGUNGSZEIT</div>
+          <div class="kpi-val">${formatSeconds(avgMovingSec)}</div>
+          <div class="kpi-sub-hint">Gesamt: ${formatSeconds(totalMovingSec)} (${avgElev} Ø hm)</div>
+        </div>
+      </div>
+
+      <!-- Diagramm-Bereich für den Geschwindigkeits- & Herzfrequenzschnitt -->
+      <div class="detail-chart-section">
+        <div class="detail-chart-title">
+          <span id="analysis-chart-main-title">
+            📈 ${effectivePaceMode ? 'Pace- &amp; Herzfrequenzschnitt' : 'Geschwindigkeits- &amp; Herzfrequenzschnitt'} (${count} ${count === 1 ? 'Einheit' : 'Einheiten'})
+          </span>
+          <span class="chart-subtitle" id="analysis-chart-subtitle">
+            Berechne kombinierten Verlauf über die Dauer…
+          </span>
+        </div>
+        <div class="detail-chart-wrapper">
+          <canvas id="analysis-detail-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Ausgewählte Einheiten als klickbare Pills -->
+      <div class="analysis-selected-pills-section">
+        <div class="analysis-pills-title">Ausgewählte Aktivitäten (${count}) – Klicke auf eine Einheit zum Abwählen:</div>
+        <div class="analysis-selected-pills-wrap" id="analysis-selected-pills-wrap">
+          ${selectedPillsHtml}
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Unit-Toggle Buttons binden
+  container.querySelectorAll("#analysis-unit-toggle .hub-filter-pill").forEach(btn => {
+    btn.addEventListener("click", () => {
+      analysisSpeedUnitOverride = btn.dataset.unit;
+      renderAnalysisDetail();
+    });
+  });
+
+  // Pill-Remove Buttons binden
+  container.querySelectorAll(".analysis-selected-activity-pill").forEach(pill => {
+    pill.addEventListener("click", () => {
+      const remId = Number(pill.dataset.removeId);
+      selectedAnalysisIds.delete(remId);
+      updateAnalysisCountBadge();
+      renderAnalysisListItems();
+      renderAnalysisDetail();
+    });
+  });
+
+  renderAnalysisCombinedChart(selectedActs, effectivePaceMode, avgKmh, avgPaceDecimal, avgHr);
+}
+
+/**
+ * Lädt (falls nötig) die Verlaufs-Profile aller ausgewählten Aktivitäten nach und zeichnet das Durchschnittsdiagramm.
+ */
+async function renderAnalysisCombinedChart(selectedActs, paceMode, overallAvgKmh, overallAvgPace, overallAvgHr) {
+  if (typeof Chart === "undefined" || !selectedActs || selectedActs.length === 0) return;
+
+  const myToken = ++analysisChartRenderToken;
+  const subtitleEl = document.getElementById("analysis-chart-subtitle");
+
+  const missingActs = selectedActs.filter(a => {
+    const numId = Number(a.id);
+    const cached = activitySpeedProfileCache.get(numId);
+    const hasValidCache = Array.isArray(cached) && cached.length > 1;
+    return !hasValidCache && !noStreamActivityIds.has(numId);
+  });
+
+  // Sofort mit bereits vorhandenen Daten zeichnen
+  drawAnalysisCombinedChart(selectedActs, paceMode, overallAvgKmh, overallAvgPace, overallAvgHr, subtitleEl, missingActs.length > 0);
+
+  // Fehlende Stream-Profile für alle ausgewählten Aktivitäten in Paketen nachladen
+  if (missingActs.length > 0) {
+    const batchSize = 6;
+    for (let i = 0; i < missingActs.length; i += batchSize) {
+      if (myToken !== analysisChartRenderToken) return;
+      const batch = missingActs.slice(i, i + batchSize);
+      await Promise.allSettled(batch.map(a => fetchActivitySpeedProfile(a)));
+      if (myToken !== analysisChartRenderToken) return;
+      const stillLoading = (i + batchSize) < missingActs.length;
+      drawAnalysisCombinedChart(selectedActs, paceMode, overallAvgKmh, overallAvgPace, overallAvgHr, subtitleEl, stillLoading);
+    }
+  }
+}
+
+/**
+ * Zeichnet das Chart.js Diagramm für den Geschwindigkeits- und Herzfrequenzschnitt der ausgewählten Aktivitäten.
+ * Für jeden Zeitpunkt tMin auf der X-Achse wird der arithmetische Mittelwert aller zu diesem Zeitpunkt
+ * aktiven ausgewählten Aktivitäten gebildet.
+ */
+function drawAnalysisCombinedChart(selectedActs, paceMode, overallAvgKmh, overallAvgPace, overallAvgHr, subtitleEl, isLoadingStreams = false) {
+  if (analysisChartInstance) {
+    analysisChartInstance.destroy();
+    analysisChartInstance = null;
+  }
+
+  const ctx = document.getElementById("analysis-detail-chart")?.getContext("2d");
+  if (!ctx) return;
+
+  // Prüfen, für welche ausgewählten Aktivitäten echte Zeitreihen-Profile vorliegen
+  const actsWithProfile = selectedActs.filter(a => {
+    const prof = activitySpeedProfileCache.get(Number(a.id));
+    return Array.isArray(prof) && prof.length > 1;
+  });
+  const useStrictProfiles = actsWithProfile.length > 0;
+
+  const getActEndMin = (a) => {
+    const prof = activitySpeedProfileCache.get(Number(a.id));
+    const durMin = Math.max(1, Math.round((((parseFloat(a.moving_time) || parseFloat(a.elapsed_time) || 60) / 60)) * 2) / 2);
+    if (Array.isArray(prof) && prof.length > 1) {
+      return prof[prof.length - 1].min || durMin;
+    }
+    return durMin;
+  };
+
+  // Identisches 0,5-Minuten-Zeitraster wie im Aktivitäten-Tab verwenden
+  let timePointsMin = [];
+  if (actsWithProfile.length === 1 && selectedActs.length === 1) {
+    const singleProf = activitySpeedProfileCache.get(Number(actsWithProfile[0].id));
+    timePointsMin = singleProf.map(p => p.min);
+  } else {
+    const maxDurationMin = Math.max(1, ...selectedActs.map(getActEndMin));
+    const stepMin = 0.5;
+    for (let t = 0; t <= maxDurationMin + 1e-6; t += stepMin) {
+      timePointsMin.push(Math.round(t * 10) / 10);
+    }
+  }
+
+  const unitLabel = paceMode ? "min/km" : "km/h";
+  const metricTitle = paceMode ? "Pace" : "Geschwindigkeit";
+
+  const speedContributorCounts = [];
+
+  // 1. Pro Zeitpunkt tMin ausschließlich den Mittelwert zwischen den gewählten Aktivitäten zu diesem Zeitpunkt bilden
+  const avgSpeedSeries = timePointsMin.map(tMin => {
+    const valsAtTime = [];
+    const sourceActs = useStrictProfiles ? actsWithProfile : selectedActs;
+
+    sourceActs.forEach(a => {
+      const actEndMin = getActEndMin(a);
+      if (tMin > actEndMin + 0.01) return; // Aktivität ist zu diesem Zeitpunkt bereits beendet
+
+      const prof = activitySpeedProfileCache.get(Number(a.id));
+      const aAvgKmh = getActivityAvgKmh(a);
+      const aAvgPace = kmhToPaceMinKm(aAvgKmh, 6.0);
+      let kmhVal = null;
+      if (Array.isArray(prof) && prof.length > 1) {
+        kmhVal = interpolateFieldAtMinute(prof, tMin, "kmh", aAvgKmh);
+      } else if (!useStrictProfiles) {
+        kmhVal = aAvgKmh;
+      }
+
+      if (typeof kmhVal === "number" && !isNaN(kmhVal) && kmhVal >= 0) {
+        if (paceMode) {
+          valsAtTime.push(kmhToPaceMinKm(kmhVal, aAvgPace));
+        } else {
+          valsAtTime.push(kmhVal);
+        }
+      }
+    });
+
+    speedContributorCounts.push(valsAtTime.length);
+    if (valsAtTime.length === 0) return null;
+
+    const meanValAtT = valsAtTime.reduce((s, v) => s + v, 0) / valsAtTime.length;
+    return Math.round(meanValAtT * 100) / 100;
+  });
+
+  // 2. Pro Zeitpunkt tMin ausschließlich den Mittelwert der Herzfrequenz zwischen den gewählten Aktivitäten zu diesem Zeitpunkt bilden
+  const actsWithHrProfile = selectedActs.filter(a => {
+    const prof = activitySpeedProfileCache.get(Number(a.id));
+    return Array.isArray(prof) && prof.some(p => typeof p.hr === "number" && p.hr > 0);
+  });
+  const actsWithAnyHr = selectedActs.filter(a => getActivityAvgHr(a) != null);
+  const useStrictHrProfiles = actsWithHrProfile.length > 0;
+  const hasHr = useStrictHrProfiles || actsWithAnyHr.length > 0;
+
+  const hrContributorCounts = [];
+  const avgHrSeries = hasHr
+    ? timePointsMin.map(tMin => {
+        const hrValsAtTime = [];
+        const sourceHrActs = useStrictHrProfiles ? actsWithHrProfile : actsWithAnyHr;
+
+        sourceHrActs.forEach(a => {
+          const actEndMin = getActEndMin(a);
+          if (tMin > actEndMin + 0.01) return;
+
+          const prof = activitySpeedProfileCache.get(Number(a.id));
+          const aAvgHr = getActivityAvgHr(a);
+          let hrVal = null;
+          if (Array.isArray(prof) && prof.length > 1) {
+            hrVal = interpolateFieldAtMinute(prof, tMin, "hr", aAvgHr);
+          } else if (!useStrictHrProfiles) {
+            hrVal = aAvgHr;
+          }
+
+          if (typeof hrVal === "number" && !isNaN(hrVal) && hrVal > 0) {
+            hrValsAtTime.push(hrVal);
+          }
+        });
+
+        hrContributorCounts.push(hrValsAtTime.length);
+        if (hrValsAtTime.length === 0) return null;
+        const meanHrAtT = hrValsAtTime.reduce((s, v) => s + v, 0) / hrValsAtTime.length;
+        return Math.round(meanHrAtT);
+      })
+    : [];
+
+  const validSpeedPoints = avgSpeedSeries.filter(v => typeof v === "number" && !isNaN(v));
+  const validHrPoints = avgHrSeries.filter(v => typeof v === "number" && !isNaN(v));
+
+  if (subtitleEl) {
+    if (isLoadingStreams) {
+      subtitleEl.textContent = `Lade Messwerte pro Zeitpunkt (${actsWithProfile.length}/${selectedActs.length} Aktivitäten geladen)…`;
+    } else {
+      const spdSummary = paceMode
+        ? `Ø Pace: ${formatPaceMinKm(overallAvgPace)} min/km`
+        : `Ø Geschwindigkeit: ${overallAvgKmh.toFixed(1)} km/h`;
+      const hrSummary = hasHr && overallAvgHr != null ? ` • ❤️ Ø Herzfrequenz: ${Math.round(overallAvgHr)} bpm` : "";
+      subtitleEl.textContent = `${spdSummary}${hrSummary} • Pro Zeitpunkt gemittelt zwischen den gewählten Aktivitäten`;
+    }
+  }
+
+  const labels = timePointsMin.map(m => `${Math.round(m)} Min.`);
+  const datasets = [
+    {
+      label: `Ø ${metricTitle} pro Zeitpunkt (${unitLabel})`,
+      data: avgSpeedSeries,
+      yAxisID: "y",
+      borderColor: "#e8391e",
+      backgroundColor: "rgba(232, 57, 30, 0.14)",
+      borderWidth: 2.5,
+      pointRadius: 0,
+      pointHitRadius: 10,
+      pointHoverRadius: 5,
+      tension: 0.3,
+      spanGaps: true,
+      fill: paceMode ? "start" : true,
+      unit: unitLabel,
+      contributorCounts: speedContributorCounts,
+    }
+  ];
+
+  if (hasHr) {
+    datasets.push({
+      label: `❤️ Ø Herzfrequenz pro Zeitpunkt (bpm)`,
+      data: avgHrSeries,
+      yAxisID: "yHr",
+      borderColor: "#ec4899",
+      backgroundColor: "rgba(236, 72, 153, 0.08)",
+      borderWidth: 2,
+      pointRadius: 0,
+      pointHitRadius: 10,
+      pointHoverRadius: 4,
+      tension: 0.3,
+      spanGaps: true,
+      fill: false,
+      unit: "bpm",
+      contributorCounts: hrContributorCounts,
+    });
+  }
+
+  const allPrimaryVals = validSpeedPoints;
+  const minPrimary = allPrimaryVals.length > 0 ? Math.min(...allPrimaryVals) : 0;
+  const maxPrimary = allPrimaryVals.length > 0 ? Math.max(...allPrimaryVals) : 30;
+
+  const allHrVals = validHrPoints;
+  const minHr = allHrVals.length > 0 ? Math.min(...allHrVals) : 60;
+  const maxHr = allHrVals.length > 0 ? Math.max(...allHrVals) : 190;
+
+  const scales = {
+    x: {
+      title: {
+        display: true,
+        text: "Dauer (Minuten)",
+        color: "#64748b",
+        font: { family: "Inter", size: 11 }
+      },
+      ticks: {
+        color: "#94a3b8",
+        font: { family: "Inter", size: 11 },
+        maxTicksLimit: 10
+      },
+      grid: { color: "rgba(37, 42, 64, 0.3)" }
+    },
+    y: {
+      type: "linear",
+      position: "left",
+      display: true,
+      reverse: paceMode,
+      title: {
+        display: true,
+        text: paceMode ? "Ø Pace (min/km)" : "Ø Geschwindigkeit (km/h)",
+        color: "#e8391e",
+        font: { family: "Inter", size: 11, weight: "600" }
+      },
+      beginAtZero: false,
+      suggestedMin: paceMode ? Math.max(2, Math.floor((minPrimary - 0.4) * 2) / 2) : Math.max(0, Math.floor(minPrimary * 0.85)),
+      suggestedMax: paceMode ? Math.ceil((maxPrimary + 0.4) * 2) / 2 : Math.ceil(maxPrimary * 1.1),
+      ticks: {
+        color: "#94a3b8",
+        font: { family: "Inter", size: 11 },
+        callback: (v) => paceMode ? `${formatPaceMinKm(v)} min/km` : `${v} km/h`
+      },
+      grid: { color: "rgba(37, 42, 64, 0.3)" }
+    }
+  };
+
+  if (hasHr) {
+    scales.yHr = {
+      type: "linear",
+      position: "right",
+      display: true,
+      title: {
+        display: true,
+        text: "Ø Herzfrequenz (bpm)",
+        color: "#ec4899",
+        font: { family: "Inter", size: 11, weight: "600" }
+      },
+      beginAtZero: false,
+      suggestedMin: Math.max(40, Math.floor(minHr - 10)),
+      suggestedMax: Math.ceil(maxHr + 10),
+      ticks: {
+        color: "#f472b6",
+        font: { family: "Inter", size: 11 },
+        callback: (v) => `${Math.round(v)} bpm`
+      },
+      grid: {
+        drawOnChartArea: false,
+        color: "rgba(37, 42, 64, 0.3)"
+      }
+    };
+  }
+
+  analysisChartInstance = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets,
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: "index",
+        intersect: false,
+      },
+      plugins: {
+        legend: {
+          labels: { color: "#94a3b8", font: { family: "Inter", size: 11 } }
+        },
+        tooltip: {
+          backgroundColor: "#111420",
+          titleColor: "#e2e8f0",
+          bodyColor: "#94a3b8",
+          borderColor: "#252a40",
+          borderWidth: 1,
+          padding: 8,
+          callbacks: {
+            label: (context) => {
+              const unit = context.dataset.unit || unitLabel;
+              const rawVal = context.parsed?.y;
+              const countAtT = context.dataset.contributorCounts?.[context.dataIndex];
+              const countSuffix = countAtT ? ` (${countAtT} ${countAtT === 1 ? 'Aktivität' : 'Aktivitäten'})` : "";
+              if (typeof rawVal !== "number") return `${context.dataset.label}: ${context.formattedValue}`;
+              if (unit === "min/km") {
+                return `${context.dataset.label}: ${formatPaceMinKm(rawVal)} min/km${countSuffix}`;
+              }
+              const formatted = unit === "bpm" ? Math.round(rawVal) : rawVal.toFixed(1);
+              return `${context.dataset.label}: ${formatted} ${unit}${countSuffix}`;
+            }
+          }
+        }
+      },
+      scales
+    }
+  });
 }
 
 window.stravaConnect = connectToStrava;

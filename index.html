@@ -19,7 +19,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <!-- CSS -->
-  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/style.css?v=2.8" />
 </head>
 
 <body>
@@ -81,6 +81,9 @@
         <button class="nav-tab active" data-tab="activities" role="tab" aria-selected="true" id="tab-activities">
           <span class="tab-icon">🏃</span> Aktivitäten
         </button>
+        <button class="nav-tab" data-tab="analysis" role="tab" aria-selected="false" id="tab-analysis">
+          <span class="tab-icon">📈</span> Analyse
+        </button>
         <button class="nav-tab" data-tab="plan" role="tab" aria-selected="false" id="tab-plan">
           <span class="tab-icon">📋</span> Trainingsplan
         </button>
@@ -130,6 +133,30 @@
             <div class="strava-loading-box">
               <div class="spinner"></div>
               <span>Lade Strava-Daten…</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════════════════════════════════
+           REITER 1b: Analyse (Mehrfachauswahl & Durchschnitts-Diagramm)
+      ════════════════════════════════════════════════════ -->
+      <section id="view-analysis" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-analysis">
+        <div class="card" aria-labelledby="analysis-title">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="icon" aria-hidden="true">📈</span>
+              <h3 id="analysis-title">Aktivitäten-Analyse (Mehrfachauswahl &amp; Schnittwerte)</h3>
+            </div>
+            <span id="analysis-status" class="plan-meta text-muted" aria-live="polite">
+              Geschwindigkeits- &amp; Herzfrequenzschnitt ausgewählter Einheiten
+            </span>
+          </div>
+
+          <div id="analysis-content" aria-live="polite">
+            <div class="strava-loading-box">
+              <div class="spinner"></div>
+              <span>Lade Aktivitäten für die Analyse…</span>
             </div>
           </div>
         </div>
@@ -592,7 +619,7 @@
   <div id="toast-container" aria-live="assertive" aria-atomic="true"></div>
 
   <!-- JavaScript Module Entry -->
-  <script type="module" src="js/auth.js?v=2.5"></script>
+  <script type="module" src="js/auth.js?v=2.8"></script>
 
 </body>
 

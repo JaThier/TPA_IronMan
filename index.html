@@ -1,698 +1,1400 @@
-<!DOCTYPE html>
-<html lang="de">
-
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <!-- SEO -->
-  <title>TPA IronMan – Trainings Dashboard</title>
-  <meta name="description"
-    content="Persönliches Ironman-Trainings-Dashboard für das TPA-Team. Strava-Sync, KI-Trainingspläne und Team-Leistungsvergleich im Hub." />
-  <meta name="theme-color" content="#0a0c12" />
-
-  <!-- Favicon (Emoji als SVG) -->
-  <link rel="icon"
-    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏊</text></svg>" />
-
-  <!-- Chart.js für interaktive Leistungs- und Vergleichsdiagramme -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-
-  <!-- CSS -->
-  <link rel="stylesheet" href="css/style.css?v=3.6" />
-</head>
-
-<body>
-
-  <!-- ══════════════════════════════════════════════════════════
-       LOGIN SCREEN
-       Wird ausgeblendet, sobald Firebase-Auth bestätigt ist.
-  ══════════════════════════════════════════════════════════ -->
-  <section id="login-screen" aria-label="Anmeldebereich">
-    <div class="login-card">
-
-      <!-- Logo / Header -->
-      <div class="login-logo">
-        <span class="logo-icon" aria-hidden="true">🏊‍♂️🚴‍♂️🏃‍♂️</span>
-        <h1>TPA <span>Iron</span>Man</h1>
-        <p>Training Dashboard für die Crew</p>
-      </div>
-
-      <!-- Fehlermeldung (initial versteckt) -->
-      <div id="login-error" class="hidden" role="alert" aria-live="assertive"></div>
-
-      <!-- Login-Formular -->
-      <form id="login-form" novalidate>
-        <div class="form-group">
-          <label for="login-email">E-Mail</label>
-          <input type="email" id="login-email" name="email" placeholder="athlete@example.com" autocomplete="email"
-            required />
-        </div>
-
-        <div class="form-group">
-          <label for="login-password">Passwort</label>
-          <input type="password" id="login-password" name="password" placeholder="••••••••"
-            autocomplete="current-password" required />
-        </div>
-
-        <button type="submit" id="login-btn" class="btn btn-primary">
-          Einloggen
-        </button>
-      </form>
-
-    </div>
-  </section>
-
-  <!-- ══════════════════════════════════════════════════════════
-       DASHBOARD
-       Wird erst nach erfolgreichem Login sichtbar.
-  ══════════════════════════════════════════════════════════ -->
-  <div id="dashboard" class="hidden" aria-label="Training Dashboard">
-
-    <!-- ── Navigation ──────────────────────────────────────── -->
-    <header class="navbar" role="banner">
-      <div class="navbar-brand">
-        <span class="brand-icon" aria-hidden="true">🏊‍♂️</span>
-        <h2>TPA <span>Iron</span>Man</h2>
-      </div>
-
-      <!-- ── Hauptmenü Tabs ────────────────────────────────── -->
-      <nav class="navbar-nav" role="tablist" aria-label="Hauptnavigation">
-
-        <!-- Dropdown 1: Strava (Aktivitäten & Analyse) -->
-        <div class="nav-dropdown" id="dropdown-strava">
-          <button type="button" class="nav-tab nav-dropdown-trigger active" id="dropdown-strava-trigger" aria-haspopup="true" aria-expanded="false" title="Strava: Aktivitäten &amp; Analyse">
-            <span class="tab-icon">🚴</span>
-            <span class="dropdown-label">Strava</span>
-            <span class="dropdown-caret" aria-hidden="true">▾</span>
-          </button>
-          <div class="nav-dropdown-menu" role="menu" aria-labelledby="dropdown-strava-trigger">
-            <button class="nav-dropdown-item nav-tab active" data-tab="activities" role="tab" aria-selected="true" id="tab-activities">
-              <span class="tab-icon">🏃</span> Aktivitäten
-            </button>
-            <button class="nav-dropdown-item nav-tab" data-tab="analysis" role="tab" aria-selected="false" id="tab-analysis">
-              <span class="tab-icon">📈</span> Analyse
-            </button>
-          </div>
-        </div>
-
-        <!-- Dropdown 2: Training (Trainingsplan, Journal & KI-Assistenz) -->
-        <div class="nav-dropdown" id="dropdown-training">
-          <button type="button" class="nav-tab nav-dropdown-trigger" id="dropdown-training-trigger" aria-haspopup="true" aria-expanded="false" title="Training: Plan, Journal &amp; KI">
-            <span class="tab-icon">📋</span>
-            <span class="dropdown-label">Training</span>
-            <span class="dropdown-caret" aria-hidden="true">▾</span>
-          </button>
-          <div class="nav-dropdown-menu" role="menu" aria-labelledby="dropdown-training-trigger">
-            <button class="nav-dropdown-item nav-tab" data-tab="plan" role="tab" aria-selected="false" id="tab-plan">
-              <span class="tab-icon">📋</span> Trainingsplan
-            </button>
-            <button class="nav-dropdown-item nav-tab" data-tab="journal" role="tab" aria-selected="false" id="tab-journal">
-              <span class="tab-icon">📓</span> Journal
-            </button>
-            <button class="nav-dropdown-item nav-tab" data-tab="ai" role="tab" aria-selected="false" id="tab-ai">
-              <span class="tab-icon">🤖</span> KI-Assistenz
-            </button>
-          </div>
-        </div>
-
-        <!-- Direkte Tabs: Hub & Konto -->
-        <button class="nav-tab" data-tab="hub" role="tab" aria-selected="false" id="tab-hub">
-          <span class="tab-icon">🏆</span> Hub
-        </button>
-        <button class="nav-tab" data-tab="account" role="tab" aria-selected="false" id="tab-account">
-          <span class="tab-icon">👤</span> Konto
-        </button>
-      </nav>
-
-      <div class="navbar-right">
-        <!-- Benutzer-Badge -->
-        <div class="user-badge" aria-label="Angemeldeter Benutzer">
-          <div class="avatar" id="user-avatar" aria-hidden="true">?</div>
-          <span id="user-email" aria-live="polite">–</span>
-        </div>
-
-        <!-- Logout -->
-        <button id="logout-btn" class="btn btn-logout" aria-label="Ausloggen">
-          Ausloggen
-        </button>
-      </div>
-    </header>
-
-    <!-- ── Haupt-Inhalt mit 3 Reitern ───────────────────────── -->
-    <main class="dashboard-main" id="main-content">
-
-      <!-- ════════════════════════════════════════════════════
-           REITER 1: Aktivitäten (Master-Detail & Sync-Zeitraum)
-      ════════════════════════════════════════════════════ -->
-      <section id="view-activities" class="tab-view active" role="tabpanel" aria-labelledby="tab-activities">
-        <div class="card" aria-labelledby="strava-title">
-          <div class="card-header">
-            <div class="card-title">
-              <span class="icon" aria-hidden="true">🚴</span>
-              <h3 id="strava-title">Strava Aktivitäten &amp; Analyse</h3>
-            </div>
-            <span id="strava-status" class="plan-meta text-muted" aria-live="polite"></span>
-          </div>
-
-          <!-- Strava Master-Detail Ansicht (wird per JS befüllt) -->
-          <div id="strava-content" aria-live="polite">
-            <div class="strava-loading-box">
-              <div class="spinner"></div>
-              <span>Lade Strava-Daten…</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ════════════════════════════════════════════════════
-           REITER 1b: Analyse (Mehrfachauswahl & Durchschnitts-Diagramm)
-      ════════════════════════════════════════════════════ -->
-      <section id="view-analysis" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-analysis">
-        <div class="card" aria-labelledby="analysis-title">
-          <div class="card-header">
-            <div class="card-title">
-              <span class="icon" aria-hidden="true">📈</span>
-              <h3 id="analysis-title">Aktivitäten-Analyse (Mehrfachauswahl &amp; Schnittwerte)</h3>
-            </div>
-            <span id="analysis-status" class="plan-meta text-muted" aria-live="polite">
-              Geschwindigkeits- &amp; Herzfrequenzschnitt ausgewählter Einheiten
-            </span>
-          </div>
-
-          <div id="analysis-content" aria-live="polite">
-            <div class="strava-loading-box">
-              <div class="spinner"></div>
-              <span>Lade Aktivitäten für die Analyse…</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ════════════════════════════════════════════════════
-           REITER 2: Trainingsplan (Übersicht & Manueller Editor)
-      ════════════════════════════════════════════════════ -->
-      <section id="view-plan" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-plan">
-
-        <!-- ── Trainingsplan-Bereich & Editor ── -->
-        <div class="card account-plan-card" id="account-plan-card">
-
-          <div class="card-header account-plan-header">
-            <div class="card-title">
-              <span class="icon" aria-hidden="true">📋</span>
-              <h3 id="account-plan-title">Mein aktueller Trainingsplan</h3>
-            </div>
-            <div class="account-plan-header-actions">
-              <span id="account-plan-status-badge" class="plan-meta text-muted" aria-live="polite">
-                Lade Trainingsplan…
-              </span>
-              <div class="plan-calendar-export-group" id="account-plan-export-group">
-                <label for="account-plan-export-weeks" class="plan-export-weeks-label" title="Anzahl der Wochen für den Kalenderexport">
-                  <span>Zeitraum:</span>
-                  <select id="account-plan-export-weeks" class="plan-export-weeks-select" aria-label="Anzahl der Wochen für den Kalenderexport">
-                    <option value="1">1 Woche</option>
-                    <option value="2">2 Wochen</option>
-                    <option value="3">3 Wochen</option>
-                    <option value="4" selected>4 Wochen</option>
-                    <option value="6">6 Wochen</option>
-                    <option value="8">8 Wochen</option>
-                    <option value="12">12 Wochen</option>
-                    <option value="16">16 Wochen</option>
-                  </select>
-                </label>
-                <button type="button" id="account-plan-export-cal-btn" class="btn btn-primary btn-sm plan-export-cal-btn" title="Trainingsplan als .ics-Kalenderdatei exportieren (für Handy- &amp; Desktop-Kalender)">
-                  <span class="btn-icon">📅</span> <span>Kalender-Export</span>
-                </button>
-                <button type="button" id="account-plan-transfer-journal-btn" class="btn btn-secondary btn-sm plan-transfer-journal-btn" title="Aktuellen Trainingsplan für den gewählten Zeitraum in das Journal übertragen">
-                  <span class="btn-icon">📓</span> <span>Ins Journal übertragen</span>
-                </button>
-              </div>
-              <button type="button" id="account-plan-toggle-mode-btn" class="btn btn-secondary btn-sm" style="width: auto;">
-                <span class="btn-icon">✏️</span> <span id="account-plan-toggle-text">Plan bearbeiten</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Modus 1: Anzeige-Ansicht (Standard) -->
-          <div id="account-plan-view-container">
-            <!-- Coach-Notiz / Wochenfokus -->
-            <div id="account-plan-coach-note-box" class="coach-note-banner hidden" style="margin-bottom: 1.25rem;">
-              <strong class="coach-title">💬 Notiz &amp; Wochenfokus:</strong>
-              <span id="account-plan-coach-note-text"></span>
-            </div>
-
-            <!-- 7-Tage-Übersicht -->
-            <div id="account-plan-days-grid" class="account-plan-grid" role="list" aria-label="Wochentrainingsplan Übersicht">
-              <div class="empty-plan-placeholder">
-                <div class="spinner"></div>
-                <span>Lade aktuellen Trainingsplan…</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Modus 2: Manueller Editor (Initial ausgeblendet) -->
-          <div id="account-plan-edit-container" class="hidden">
-            <div class="account-plan-editor-toolbar">
-              <div class="editor-template-actions">
-                <span class="editor-toolbar-label">Schnell-Vorlagen:</span>
-                <button type="button" id="btn-template-ironman" class="btn btn-secondary btn-sm" title="Ausgewogene Ironman-Trainingswoche laden">
-                  ⚡ Ironman-Vorlage
-                </button>
-                <button type="button" id="btn-template-reset" class="btn btn-secondary btn-sm" title="Alle Tage auf Ruhetag setzen">
-                  🧹 Alle Ruhetag
-                </button>
-              </div>
-              <div class="editor-actions-top">
-                <button type="button" id="account-plan-cancel-btn-top" class="btn btn-secondary btn-sm">
-                  Abbrechen
-                </button>
-                <button type="button" id="account-plan-save-btn-top" class="btn btn-primary btn-sm">
-                  💾 Speichern
-                </button>
-              </div>
-            </div>
-
-            <p class="editor-helper-text">
-              Wähle für jeden Wochentag eine oder mehrere Disziplinen (z. B. <em>Rad + Laufen</em> für Koppeltraining). Der <strong>Ruhetag</strong> deaktiviert automatisch die Sportarten. Für jede gewählte Disziplin lassen sich die Trainingsarten frei wählen und deren Parameter (Dauer, Distanz, Tempo, Intensität) individuell festlegen.
-            </p>
-
-            <!-- 7 Tage Eingabemasken (Montag - Sonntag) -->
-            <div id="account-plan-editor-days" class="account-plan-editor-list">
-              <!-- Dynamisch via account.js befüllt -->
-            </div>
-
-            <!-- Allgemeiner Wochenfokus / Notiz -->
-            <div class="form-group" style="margin-top: 1.5rem;">
-              <label for="account-plan-edit-coachnote">
-                💬 Wochenfokus / Sonstige Infos für die gesamte Woche (optional)
-              </label>
-              <textarea id="account-plan-edit-coachnote" rows="2" class="form-textarea"
-                placeholder="z. B. Grundlagenwoche mit Fokus auf saubere Trittfrequenz und Erholung."></textarea>
-            </div>
-
-            <!-- Formular-Aktionen unten -->
-            <div class="account-form-actions" style="margin-top: 1.5rem;">
-              <button type="button" id="account-plan-cancel-btn" class="btn btn-secondary" style="width: auto;">
-                Abbrechen
-              </button>
-              <button type="button" id="account-plan-save-btn" class="btn btn-primary" style="width: auto;">
-                💾 Trainingsplan speichern &amp; übernehmen
-              </button>
-            </div>
-          </div>
-
-        </div>
-
-      </section>
-
-      <!-- ════════════════════════════════════════════════════
-           REITER 2b: Journal (Kalender, Aktivitäts-Mapping, RPE & Beschwerden)
-      ════════════════════════════════════════════════════ -->
-      <section id="view-journal" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-journal">
-        <div class="card journal-card" aria-labelledby="journal-title">
-          <div class="card-header">
-            <div class="card-title">
-              <span class="icon" aria-hidden="true">📓</span>
-              <h3 id="journal-title">Trainings-Journal &amp; Kalender</h3>
-            </div>
-            <span class="plan-meta text-muted">
-              Soll/Ist-Abgleich, Aktivitäts-Mapping, Belastungsempfinden (1–5) &amp; Beschwerden
-            </span>
-          </div>
-
-          <div id="journal-content" aria-live="polite">
-            <div class="strava-loading-box">
-              <div class="spinner"></div>
-              <span>Lade Trainings-Journal…</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ════════════════════════════════════════════════════
-           REITER 3: KI-Assistenz (Google Gemini Generator & Feedback)
-      ════════════════════════════════════════════════════ -->
-      <section id="view-ai" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-ai">
-
-        <!-- KI-Steuerungs-Panel & Analyse-Zeitraum -->
-        <div class="card ai-config-card" style="margin-bottom: 1.5rem;">
-          <div class="card-header">
-            <div class="card-title">
-              <span class="icon" aria-hidden="true">🤖</span>
-              <h3>KI-Assistenz &amp; Trainingsplan-Generator (Google Gemini)</h3>
-            </div>
-            <span class="plan-meta text-muted">Intelligente Periodisierung</span>
-          </div>
-
-          <div class="ai-config-body">
-            <p class="ai-desc">
-              Konfiguriere, wie weit deine Strava-Aktivitäten für die Analyse zurückreichen sollen.
-              Gemini analysiert dein Trainingsvolumen, deine Belastungsspitzen und Erholungsphasen aus diesem Zeitraum
-              und schlägt dir einen neuen Wochenplan vor oder gibt dir detailliertes Coach-Feedback zu deinem aktuellen Plan.
-            </p>
-
-            <div class="ai-timeframe-toolbar">
-              <div class="timeframe-control-group">
-                <label for="ai-timeframe-select">Aktivitäten einbeziehen ab:</label>
-                <div class="input-inline-group">
-                  <select id="ai-timeframe-select" class="form-select">
-                    <option value="7">Letzte 7 Tage (1 Woche)</option>
-                    <option value="14">Letzte 14 Tage (2 Wochen)</option>
-                    <option value="28">Letzte 4 Wochen (28 Tage)</option>
-                    <option value="30" selected>Letzte 30 Tage (~1 Monat) [Standard]</option>
-                    <option value="60">Letzte 60 Tage (~2 Monate)</option>
-                    <option value="90">Letzte 90 Tage (~3 Monate)</option>
-                    <option value="custom">Benutzerdefiniert...</option>
-                  </select>
-
-                  <div id="ai-custom-timeframe-box" class="custom-inputs hidden">
-                    <input type="number" id="ai-custom-val" min="1" max="365" value="30" class="form-input-sm" />
-                    <select id="ai-custom-unit" class="form-select-sm">
-                      <option value="days" selected>Tage</option>
-                      <option value="weeks">Wochen</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div class="ai-button-group">
-                <button type="button" id="ai-feedback-btn" class="btn btn-ai-feedback" aria-label="Trainingsplan von KI analysieren lassen und Feedback einholen">
-                  🔍 Plan analysieren &amp; Feedback
-                </button>
-                <button type="button" id="ai-adjust-btn" class="btn btn-ai" aria-label="Neuen Trainingsplan-Vorschlag von KI generieren lassen">
-                  🤖 Plan-Vorschlag generieren
-                </button>
-              </div>
-            </div>
-
-            <!-- Zusätzliche Hinweise / Wünsche für die KI (Prompt-Ergänzung) -->
-            <div class="ai-custom-prompt-box" style="margin-top: 1rem;">
-              <label for="ai-user-prompt-input" class="ai-prompt-label">
-                💬 Zusätzliche Hinweise oder Wünsche für diese Anfrage (optional):
-              </label>
-              <textarea id="ai-user-prompt-input" rows="2" class="form-textarea ai-user-prompt-textarea"
-                placeholder="z. B. „Diese Woche bin ich Donnerstag & Freitag auf Geschäftsreise (nur Laufen möglich)“, „Bitte eine Regenerationswoche mit reduziertem Umfang planen“ oder „Mehr Fokus auf Kraul-Intervalle“..."></textarea>
-            </div>
-
-            <!-- Vorschau über gefilterte Aktivitäten -->
-            <div id="ai-timeframe-info" class="ai-preview-badge">
-              Lade Aktivitäts-Vorschau…
-            </div>
-
-            <!-- KI-Statusanzeige -->
-            <div id="ai-status" class="hidden" role="status" aria-live="polite"></div>
-          </div>
-        </div>
-
-        <!-- ── KI-Feedback & Analyse Card (Dynamisch nach Analyse befüllt) ── -->
-        <div id="ai-feedback-card" class="card ai-feedback-card hidden" style="margin-bottom: 1.5rem;" aria-live="polite">
-          <div class="card-header ai-feedback-header">
-            <div class="card-title">
-              <span class="icon" aria-hidden="true">💡</span>
-              <h3 id="ai-feedback-title">KI-Analyse &amp; Feedback zum aktuellen Trainingsplan</h3>
-            </div>
-            <div class="feedback-meta-actions">
-              <span id="ai-feedback-meta" class="plan-meta text-muted"></span>
-              <button type="button" id="ai-feedback-close-btn" class="feedback-close-btn" aria-label="Feedback schließen">✕</button>
-            </div>
-          </div>
-          <div class="ai-feedback-body" id="ai-feedback-content">
-            <!-- Wird per gemini.js befüllt -->
-          </div>
-        </div>
-
-        <!-- ── KI-Trainingsplan-Vorschlag Card (wird nach Generierung als Vorschlag angezeigt) ── -->
-        <div id="ai-proposal-card" class="card ai-proposal-card hidden" aria-labelledby="plan-title">
-          <div class="card-header ai-proposal-header">
-            <div class="card-title">
-              <span class="icon" aria-hidden="true">✨</span>
-              <h3 id="plan-title">Neuer Trainingsplan-Vorschlag von Gemini</h3>
-            </div>
-            <span id="plan-meta" class="plan-meta" aria-live="polite"></span>
-          </div>
-
-          <!-- Aktionsleiste zum Annehmen oder Ablehnen des Vorschlags -->
-          <div class="ai-proposal-decision-bar">
-            <div class="proposal-decision-info">
-              <strong>Möchtest du diesen KI-Vorschlag übernehmen?</strong>
-              <span>Bei Annahme wird dein aktueller Trainingsplan im Reiter <em>Trainingsplan</em> durch diesen Vorschlag überschrieben.</span>
-            </div>
-            <div class="proposal-decision-buttons">
-              <button type="button" id="ai-reject-proposal-btn" class="btn btn-secondary" style="width: auto;">
-                ✕ Vorschlag ablehnen
-              </button>
-              <button type="button" id="ai-accept-proposal-btn" class="btn btn-primary" style="width: auto;">
-                ✅ Vorschlag annehmen &amp; Trainingsplan überschreiben
-              </button>
-            </div>
-          </div>
-
-          <!-- Coach-Notiz (nach KI-Generierung) -->
-          <div id="coach-note-box" class="hidden coach-note-banner">
-            <strong class="coach-title">💬 Coach-Empfehlung für diesen Vorschlag:</strong>
-            <span id="coach-note"></span>
-          </div>
-
-          <!-- 7-Tage-Wochen-Grid des Vorschlags (wird per JS befüllt) -->
-          <div id="week-plan-grid" class="week-grid" role="list" aria-label="Vorgeschlagener Wochentrainingsplan" aria-live="polite">
-          </div>
-        </div>
-
-        <!-- Platzhalter wenn noch kein Vorschlag oder Feedback offen ist -->
-        <div id="ai-empty-hint-card" class="card ai-empty-hint-card">
-          <div class="empty-plan-card">
-            <span>🤖</span>
-            <h3>KI-Coach bereit</h3>
-            <p>Wähle oben deinen gewünschten Analyse-Zeitraum und klicke auf <strong>„Plan-Vorschlag generieren“</strong>, um dir einen neuen Wochenplan-Entwurf erstellen zu lassen, oder auf <strong>„Plan analysieren &amp; Feedback“</strong>, um deinen bestehenden Trainingsplan auswerten zu lassen.</p>
-          </div>
-        </div>
-
-      </section>
-
-      <!-- ════════════════════════════════════════════════════
-           REITER 3: Hub (Leistungsvergleich & Diagramme)
-      ════════════════════════════════════════════════════ -->
-      <section id="view-hub" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-hub">
-
-        <div class="hub-header-bar">
-          <div>
-            <h2 class="hub-main-title">🏆 TPA IronMan Crew Hub</h2>
-            <p class="hub-subtitle">Vergleiche deine Trainingsumfänge, Disziplinen und Fortschritte mit deinen
-              Teamkollegen.</p>
-          </div>
-
-          <div class="hub-header-actions">
-            <div class="hub-timeframe-control">
-              <label for="hub-timeframe-select" class="hub-timeframe-label">
-                <span class="hub-timeframe-icon" aria-hidden="true">⏱️</span> Zeitraum:
-              </label>
-              <select id="hub-timeframe-select" class="form-select hub-timeframe-select" aria-label="Betrachteter Zeitraum für Leistungsvergleich">
-                <option value="7d" selected>1 Woche</option>
-                <option value="14d">2 Wochen</option>
-                <option value="30d">1 Monat</option>
-                <option value="60d">2 Monate</option>
-                <option value="180d">6 Monate</option>
-                <option value="365d">Jahr</option>
-              </select>
-            </div>
-            <button id="hub-refresh-btn" class="btn btn-primary" style="width: auto;">
-              🔄 Hub aktualisieren
-            </button>
-          </div>
-        </div>
-
-        <!-- Dynamischer Inhalt (Podiums, Chart.js Diagramme & Team-Tabelle) -->
-        <div id="hub-content">
-          <!-- Wird per hub.js befüllt -->
-        </div>
-      </section>
-
-      <!-- ════════════════════════════════════════════════════
-           REITER 4: Konto & Athleten-Profil
-      ════════════════════════════════════════════════════ -->
-      <section id="view-account" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-account">
-          <div class="card account-card">
-
-            <div class="card-header">
-              <div class="card-title">
-                <span class="icon" aria-hidden="true">👤</span>
-                <h3>Mein Athleten-Konto &amp; Einstellungen</h3>
-              </div>
-              <span class="plan-meta text-muted">Profilverwaltung</span>
-            </div>
-
-            <!-- Hero Profile Header -->
-            <div class="account-hero">
-              <div class="account-avatar-large" id="account-avatar-large">?</div>
-              <div class="account-hero-info">
-                <h2 id="account-hero-name" class="account-name">Lade Profil…</h2>
-                <div id="account-hero-email" class="account-email text-muted">–</div>
-                <div class="account-badges">
-                  <span class="team-badge">🏊‍♂️🚴‍♂️🏃‍♂️ TPA IronMan Athlet</span>
-                  <span id="account-strava-badge" class="strava-status-badge">
-                    <span class="badge-status-dot dot-gray"></span>
-                    <span>Prüfe Strava-Status…</span>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Formular zur Namensänderung -->
-            <form id="account-profile-form" class="account-form">
-              <div class="form-group">
-                <label for="account-name-input">Athleten-Name / Rufname (wird im Hub angezeigt)</label>
-                <input type="text" id="account-name-input" name="name" placeholder="z. B. Jakob Thier" required
-                  autocomplete="name" />
-                <span class="input-hint">Dieser Name erscheint in der Team-Rangliste, auf den Hub-Podien und in deinen
-                  Trainingsplänen.</span>
-              </div>
-
-              <div class="form-group">
-                <label for="account-email-input">E-Mail-Adresse (Login-Konto)</label>
-                <input type="email" id="account-email-input" name="email" disabled class="input-disabled" />
-                <span class="input-hint">E-Mail ist fest mit deiner Firebase-Authentifizierung verknüpft.</span>
-              </div>
-
-              <hr class="account-section-divider" />
-
-              <!-- ── Sektion 1: Körperdaten & Physiologie ── -->
-              <div class="account-section-header">
-                <h4>🧬 Körperdaten &amp; Herzfrequenz (für KI-Trainingszonen)</h4>
-                <p>Diese Kennwerte helfen der KI, deine individuellen Belastungszonen (GA1/GA2/EB), Watt/kg und deinen Kalorienbedarf präzise zu berechnen.</p>
-              </div>
-
-              <div class="account-metrics-grid">
-                <div class="form-group">
-                  <label for="account-age-input">🎂 Alter (Jahre)</label>
-                  <input type="number" id="account-age-input" min="14" max="100" step="1" placeholder="z. B. 32" />
-                </div>
-
-                <div class="form-group">
-                  <label for="account-height-input">📏 Körpergröße (cm)</label>
-                  <input type="number" id="account-height-input" min="120" max="230" step="1" placeholder="z. B. 182" />
-                </div>
-
-                <div class="form-group">
-                  <label for="account-weight-input">⚖️ Gewicht (kg)</label>
-                  <input type="number" id="account-weight-input" min="35" max="200" step="0.1" placeholder="z. B. 76.5" />
-                </div>
-
-                <div class="form-group">
-                  <label for="account-resting-hr-input">💤 Ruhepuls (bpm)</label>
-                  <input type="number" id="account-resting-hr-input" min="30" max="110" step="1" placeholder="z. B. 48" />
-                </div>
-
-                <div class="form-group">
-                  <label for="account-max-hr-input">❤️ Maximalpuls (bpm)</label>
-                  <input type="number" id="account-max-hr-input" min="120" max="230" step="1" placeholder="z. B. 192" />
-                </div>
-
-                <div class="form-group">
-                  <label for="account-ftp-input">⚡ Rad-FTP / Schwellenleistung (Watt)</label>
-                  <input type="number" id="account-ftp-input" min="50" max="600" step="1" placeholder="z. B. 265" />
-                </div>
-              </div>
-
-              <hr class="account-section-divider" />
-
-              <!-- ── Sektion 2: Leistungs-Benchmarks & Triathlon-Ziele ── -->
-              <div class="account-section-header">
-                <h4>🎯 Triathlon-Erfahrung, Pace-Benchmarks &amp; Wettkampfziel</h4>
-                <p>Optionale Angaben für ein noch präziseres Pacing und auf dich zugeschnittene Wochenumfänge der KI-Assistenz.</p>
-              </div>
-
-              <div class="account-metrics-grid">
-                <div class="form-group">
-                  <label for="account-experience-select">🏅 Erfahrungslevel</label>
-                  <select id="account-experience-select" class="form-select">
-                    <option value="">– Bitte wählen (optional) –</option>
-                    <option value="rookie">Einsteiger / Erster Triathlon</option>
-                    <option value="intermediate">Fortgeschritten (Olympisch / 70.3 Erfahrung)</option>
-                    <option value="experienced">Erfahrener Langdistanz-Athlet</option>
-                    <option value="ambitious">Performance / Altersklassen-Podium</option>
-                  </select>
-                </div>
-
-                <div class="form-group">
-                  <label for="account-weekly-hours-input">⏱️ Max. Zeitbudget pro Woche (Std.)</label>
-                  <input type="number" id="account-weekly-hours-input" min="2" max="35" step="0.5" placeholder="z. B. 12" />
-                </div>
-
-                <div class="form-group">
-                  <label for="account-swim-css-input">🏊 Schwimm-Schwelle / CSS (min/100m)</label>
-                  <input type="text" id="account-swim-css-input" placeholder="z. B. 1:45" />
-                </div>
-
-                <div class="form-group">
-                  <label for="account-run-pace-input">🏃 Lauf-Schwellenpace (min/km)</label>
-                  <input type="text" id="account-run-pace-input" placeholder="z. B. 4:35" />
-                </div>
-
-                <div class="form-group">
-                  <label for="account-race-date-input">📅 Wettkampfdatum (Hauptziel)</label>
-                  <input type="date" id="account-race-date-input" class="form-input-date" />
-                </div>
-
-                <div class="form-group">
-                  <label for="account-target-time-input">🏁 Zielzeit (z. B. Sub 10:30 h oder Finish)</label>
-                  <input type="text" id="account-target-time-input" placeholder="z. B. 10:45 h / Sicher ins Ziel" />
-                </div>
-              </div>
-
-              <div class="form-group" style="margin-top: 0.75rem;">
-                <label for="account-injuries-input">🩹 Verletzungshistorie, Schwachstellen oder besondere Hinweise für den KI-Coach</label>
-                <textarea id="account-injuries-input" rows="2" class="form-textarea"
-                  placeholder="z. B. Empfindliche Achillessehne bei zu schnellen Steigerungen, Fokus auf Kraul-Wasserlage, unter der Woche max. 90 Min. pro Einheit möglich..."></textarea>
-                <span class="input-hint">Die KI berücksichtigt diese Hinweise automatisch bei der Erstellung neuer Plan-Vorschläge und im Plan-Feedback.</span>
-              </div>
-
-              <div class="account-form-actions">
-                <button type="submit" id="account-save-btn" class="btn btn-primary" style="width: auto;">
-                  💾 Profil &amp; Athletendaten speichern
-                </button>
-              </div>
-            </form>
-
-          </div>
-        </section>
-
-    </main>
-
-    <!-- ── Footer ───────────────────────────────────────────── -->
-    <footer class="dashboard-footer" role="contentinfo">
-      <p>TPA IronMan Dashboard &bull; Powered by Firebase, Strava &amp; Gemini AI</p>
-    </footer>
-
-  </div>
-
-  <!-- ── Onboarding Modal (Erster Login: Namensabfrage) ──────── -->
-  <div id="name-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-name-title">
-    <div class="modal-card">
-      <span class="modal-icon">👋</span>
-      <h2 id="modal-name-title">Willkommen im Team!</h2>
-      <p class="modal-desc">
-        Wie möchtest du im Dashboard und auf dem <strong>Hub-Leaderboard</strong> genannt werden?
-      </p>
-
-      <form id="onboarding-name-form" onsubmit="event.preventDefault(); window.saveOnboardingName();">
-        <div class="form-group" style="margin-bottom: 1.5rem;">
-          <label for="onboarding-name-input">Dein Athleten-Name / Rufname</label>
-          <input type="text" id="onboarding-name-input" placeholder="z. B. Jakob" required autocomplete="name" />
-        </div>
-
-        <button type="submit" id="onboarding-save-btn" class="btn btn-primary">
-          🚀 Speichern &amp; Dashboard starten
-        </button>
-      </form>
-    </div>
-  </div>
-
-  <!-- ── Toast-Container ──────────────────────────────────── -->
-  <div id="toast-container" aria-live="assertive" aria-atomic="true"></div>
-
-  <!-- JavaScript Module Entry -->
-  <script type="module" src="js/auth.js?v=3.6"></script>
-
-</body>
-
+<!DOCTYPE html>
+
+<html lang="de">
+
+
+
+<head>
+
+  <meta charset="UTF-8" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+
+
+  <!-- SEO -->
+
+  <title>TPA IronMan – Trainings Dashboard</title>
+
+  <meta name="description"
+
+    content="Persönliches Ironman-Trainings-Dashboard für das TPA-Team. Strava-Sync, KI-Trainingspläne und Team-Leistungsvergleich im Hub." />
+
+  <meta name="theme-color" content="#0a0c12" />
+
+
+
+  <!-- Favicon (Emoji als SVG) -->
+
+  <link rel="icon"
+
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏊</text></svg>" />
+
+
+
+  <!-- Chart.js für interaktive Leistungs- und Vergleichsdiagramme -->
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+
+
+  <!-- CSS -->
+
+  <link rel="stylesheet" href="css/style.css?v=3.7" />
+
+</head>
+
+
+
+<body>
+
+
+
+  <!-- ══════════════════════════════════════════════════════════
+
+       LOGIN SCREEN
+
+       Wird ausgeblendet, sobald Firebase-Auth bestätigt ist.
+
+  ══════════════════════════════════════════════════════════ -->
+
+  <section id="login-screen" aria-label="Anmeldebereich">
+
+    <div class="login-card">
+
+
+
+      <!-- Logo / Header -->
+
+      <div class="login-logo">
+
+        <span class="logo-icon" aria-hidden="true">🏊‍♂️🚴‍♂️🏃‍♂️</span>
+
+        <h1>TPA <span>Iron</span>Man</h1>
+
+        <p>Training Dashboard für die Crew</p>
+
+      </div>
+
+
+
+      <!-- Fehlermeldung (initial versteckt) -->
+
+      <div id="login-error" class="hidden" role="alert" aria-live="assertive"></div>
+
+
+
+      <!-- Login-Formular -->
+
+      <form id="login-form" novalidate>
+
+        <div class="form-group">
+
+          <label for="login-email">E-Mail</label>
+
+          <input type="email" id="login-email" name="email" placeholder="athlete@example.com" autocomplete="email"
+
+            required />
+
+        </div>
+
+
+
+        <div class="form-group">
+
+          <label for="login-password">Passwort</label>
+
+          <input type="password" id="login-password" name="password" placeholder="••••••••"
+
+            autocomplete="current-password" required />
+
+        </div>
+
+
+
+        <button type="submit" id="login-btn" class="btn btn-primary">
+
+          Einloggen
+
+        </button>
+
+      </form>
+
+
+
+    </div>
+
+  </section>
+
+
+
+  <!-- ══════════════════════════════════════════════════════════
+
+       DASHBOARD
+
+       Wird erst nach erfolgreichem Login sichtbar.
+
+  ══════════════════════════════════════════════════════════ -->
+
+  <div id="dashboard" class="hidden" aria-label="Training Dashboard">
+
+
+
+    <!-- ── Navigation ──────────────────────────────────────── -->
+
+    <header class="navbar" role="banner">
+
+      <div class="navbar-brand">
+
+        <span class="brand-icon" aria-hidden="true">🏊‍♂️</span>
+
+        <h2>TPA <span>Iron</span>Man</h2>
+
+      </div>
+
+
+
+      <!-- ── Hauptmenü Tabs ────────────────────────────────── -->
+
+      <nav class="navbar-nav" role="tablist" aria-label="Hauptnavigation">
+
+
+
+        <!-- Dropdown 1: Strava (Aktivitäten & Analyse) -->
+
+        <div class="nav-dropdown" id="dropdown-strava">
+
+          <button type="button" class="nav-tab nav-dropdown-trigger active" id="dropdown-strava-trigger" aria-haspopup="true" aria-expanded="false" title="Strava: Aktivitäten &amp; Analyse">
+
+            <span class="tab-icon">🚴</span>
+
+            <span class="dropdown-label">Strava</span>
+
+            <span class="dropdown-caret" aria-hidden="true">▾</span>
+
+          </button>
+
+          <div class="nav-dropdown-menu" role="menu" aria-labelledby="dropdown-strava-trigger">
+
+            <button class="nav-dropdown-item nav-tab active" data-tab="activities" role="tab" aria-selected="true" id="tab-activities">
+
+              <span class="tab-icon">🏃</span> Aktivitäten
+
+            </button>
+
+            <button class="nav-dropdown-item nav-tab" data-tab="analysis" role="tab" aria-selected="false" id="tab-analysis">
+
+              <span class="tab-icon">📈</span> Analyse
+
+            </button>
+
+          </div>
+
+        </div>
+
+
+
+        <!-- Dropdown 2: Training (Trainingsplan, Journal & KI-Assistenz) -->
+
+        <div class="nav-dropdown" id="dropdown-training">
+
+          <button type="button" class="nav-tab nav-dropdown-trigger" id="dropdown-training-trigger" aria-haspopup="true" aria-expanded="false" title="Training: Plan, Journal &amp; KI">
+
+            <span class="tab-icon">📋</span>
+
+            <span class="dropdown-label">Training</span>
+
+            <span class="dropdown-caret" aria-hidden="true">▾</span>
+
+          </button>
+
+          <div class="nav-dropdown-menu" role="menu" aria-labelledby="dropdown-training-trigger">
+
+            <button class="nav-dropdown-item nav-tab" data-tab="plan" role="tab" aria-selected="false" id="tab-plan">
+
+              <span class="tab-icon">📋</span> Trainingsplan
+
+            </button>
+
+            <button class="nav-dropdown-item nav-tab" data-tab="journal" role="tab" aria-selected="false" id="tab-journal">
+
+              <span class="tab-icon">📓</span> Journal
+
+            </button>
+
+            <button class="nav-dropdown-item nav-tab" data-tab="ai" role="tab" aria-selected="false" id="tab-ai">
+
+              <span class="tab-icon">🤖</span> KI-Assistenz
+
+            </button>
+
+          </div>
+
+        </div>
+
+
+
+        <!-- Direkte Tabs: Hub & Konto -->
+
+        <button class="nav-tab" data-tab="hub" role="tab" aria-selected="false" id="tab-hub">
+
+          <span class="tab-icon">🏆</span> Hub
+
+        </button>
+
+        <button class="nav-tab" data-tab="account" role="tab" aria-selected="false" id="tab-account">
+
+          <span class="tab-icon">👤</span> Konto
+
+        </button>
+
+      </nav>
+
+
+
+      <div class="navbar-right">
+
+        <!-- Benutzer-Badge -->
+
+        <div class="user-badge" aria-label="Angemeldeter Benutzer">
+
+          <div class="avatar" id="user-avatar" aria-hidden="true">?</div>
+
+          <span id="user-email" aria-live="polite">–</span>
+
+        </div>
+
+
+
+        <!-- Logout -->
+
+        <button id="logout-btn" class="btn btn-logout" aria-label="Ausloggen">
+
+          Ausloggen
+
+        </button>
+
+      </div>
+
+    </header>
+
+
+
+    <!-- ── Haupt-Inhalt mit 3 Reitern ───────────────────────── -->
+
+    <main class="dashboard-main" id="main-content">
+
+
+
+      <!-- ════════════════════════════════════════════════════
+
+           REITER 1: Aktivitäten (Master-Detail & Sync-Zeitraum)
+
+      ════════════════════════════════════════════════════ -->
+
+      <section id="view-activities" class="tab-view active" role="tabpanel" aria-labelledby="tab-activities">
+
+        <div class="card" aria-labelledby="strava-title">
+
+          <div class="card-header">
+
+            <div class="card-title">
+
+              <span class="icon" aria-hidden="true">🚴</span>
+
+              <h3 id="strava-title">Strava Aktivitäten &amp; Analyse</h3>
+
+            </div>
+
+            <span id="strava-status" class="plan-meta text-muted" aria-live="polite"></span>
+
+          </div>
+
+
+
+          <!-- Strava Master-Detail Ansicht (wird per JS befüllt) -->
+
+          <div id="strava-content" aria-live="polite">
+
+            <div class="strava-loading-box">
+
+              <div class="spinner"></div>
+
+              <span>Lade Strava-Daten…</span>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </section>
+
+
+
+      <!-- ════════════════════════════════════════════════════
+
+           REITER 1b: Analyse (Mehrfachauswahl & Durchschnitts-Diagramm)
+
+      ════════════════════════════════════════════════════ -->
+
+      <section id="view-analysis" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-analysis">
+
+        <div class="card" aria-labelledby="analysis-title">
+
+          <div class="card-header">
+
+            <div class="card-title">
+
+              <span class="icon" aria-hidden="true">📈</span>
+
+              <h3 id="analysis-title">Aktivitäten-Analyse (Mehrfachauswahl &amp; Schnittwerte)</h3>
+
+            </div>
+
+            <span id="analysis-status" class="plan-meta text-muted" aria-live="polite">
+
+              Geschwindigkeits- &amp; Herzfrequenzschnitt ausgewählter Einheiten
+
+            </span>
+
+          </div>
+
+
+
+          <div id="analysis-content" aria-live="polite">
+
+            <div class="strava-loading-box">
+
+              <div class="spinner"></div>
+
+              <span>Lade Aktivitäten für die Analyse…</span>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </section>
+
+
+
+      <!-- ════════════════════════════════════════════════════
+
+           REITER 2: Trainingsplan (Übersicht & Manueller Editor)
+
+      ════════════════════════════════════════════════════ -->
+
+      <section id="view-plan" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-plan">
+
+
+
+        <!-- ── Trainingsplan-Bereich & Editor ── -->
+
+        <div class="card account-plan-card" id="account-plan-card">
+
+
+
+          <div class="card-header account-plan-header">
+
+            <div class="card-title">
+
+              <span class="icon" aria-hidden="true">📋</span>
+
+              <h3 id="account-plan-title">Mein aktueller Trainingsplan</h3>
+
+            </div>
+
+            <div class="account-plan-header-actions">
+
+              <span id="account-plan-status-badge" class="plan-meta text-muted" aria-live="polite">
+
+                Lade Trainingsplan…
+
+              </span>
+
+              <div class="plan-calendar-export-group" id="account-plan-export-group">
+
+                <label for="account-plan-export-weeks" class="plan-export-weeks-label" title="Anzahl der Wochen für den Kalenderexport">
+
+                  <span>Zeitraum:</span>
+
+                  <select id="account-plan-export-weeks" class="plan-export-weeks-select" aria-label="Anzahl der Wochen für den Kalenderexport">
+
+                    <option value="1">1 Woche</option>
+
+                    <option value="2">2 Wochen</option>
+
+                    <option value="3">3 Wochen</option>
+
+                    <option value="4" selected>4 Wochen</option>
+
+                    <option value="6">6 Wochen</option>
+
+                    <option value="8">8 Wochen</option>
+
+                    <option value="12">12 Wochen</option>
+
+                    <option value="16">16 Wochen</option>
+
+                  </select>
+
+                </label>
+
+                <button type="button" id="account-plan-export-cal-btn" class="btn btn-primary btn-sm plan-export-cal-btn" title="Trainingsplan als .ics-Kalenderdatei exportieren (für Handy- &amp; Desktop-Kalender)">
+
+                  <span class="btn-icon">📅</span> <span>Kalender-Export</span>
+
+                </button>
+
+                <button type="button" id="account-plan-transfer-journal-btn" class="btn btn-secondary btn-sm plan-transfer-journal-btn" title="Aktuellen Trainingsplan für den gewählten Zeitraum in das Journal übertragen">
+
+                  <span class="btn-icon">📓</span> <span>Ins Journal übertragen</span>
+
+                </button>
+
+              </div>
+
+              <button type="button" id="account-plan-toggle-mode-btn" class="btn btn-secondary btn-sm" style="width: auto;">
+
+                <span class="btn-icon">✏️</span> <span id="account-plan-toggle-text">Plan bearbeiten</span>
+
+              </button>
+
+            </div>
+
+          </div>
+
+
+
+          <!-- Modus 1: Anzeige-Ansicht (Standard) -->
+
+          <div id="account-plan-view-container">
+
+            <!-- Coach-Notiz / Wochenfokus -->
+
+            <div id="account-plan-coach-note-box" class="coach-note-banner hidden" style="margin-bottom: 1.25rem;">
+
+              <strong class="coach-title">💬 Notiz &amp; Wochenfokus:</strong>
+
+              <span id="account-plan-coach-note-text"></span>
+
+            </div>
+
+            <!-- Mobile Scroll Hinweis (nur auf Handys sichtbar) -->
+            <div class="mobile-plan-scroll-hint" aria-hidden="true">
+              <span>👉</span> Wische horizontal durch die 7 Wochentage
+            </div>
+
+
+
+            <!-- 7-Tage-Übersicht -->
+
+            <div id="account-plan-days-grid" class="account-plan-grid" role="list" aria-label="Wochentrainingsplan Übersicht">
+
+              <div class="empty-plan-placeholder">
+
+                <div class="spinner"></div>
+
+                <span>Lade aktuellen Trainingsplan…</span>
+
+              </div>
+
+            </div>
+
+          </div>
+
+
+
+          <!-- Modus 2: Manueller Editor (Initial ausgeblendet) -->
+
+          <div id="account-plan-edit-container" class="hidden">
+
+            <div class="account-plan-editor-toolbar">
+
+              <div class="editor-template-actions">
+
+                <span class="editor-toolbar-label">Schnell-Vorlagen:</span>
+
+                <button type="button" id="btn-template-ironman" class="btn btn-secondary btn-sm" title="Ausgewogene Ironman-Trainingswoche laden">
+
+                  ⚡ Ironman-Vorlage
+
+                </button>
+
+                <button type="button" id="btn-template-reset" class="btn btn-secondary btn-sm" title="Alle Tage auf Ruhetag setzen">
+
+                  🧹 Alle Ruhetag
+
+                </button>
+
+              </div>
+
+              <div class="editor-actions-top">
+
+                <button type="button" id="account-plan-cancel-btn-top" class="btn btn-secondary btn-sm">
+
+                  Abbrechen
+
+                </button>
+
+                <button type="button" id="account-plan-save-btn-top" class="btn btn-primary btn-sm">
+
+                  💾 Speichern
+
+                </button>
+
+              </div>
+
+            </div>
+
+
+
+            <p class="editor-helper-text">
+
+              Wähle für jeden Wochentag eine oder mehrere Disziplinen (z. B. <em>Rad + Laufen</em> für Koppeltraining). Der <strong>Ruhetag</strong> deaktiviert automatisch die Sportarten. Für jede gewählte Disziplin lassen sich die Trainingsarten frei wählen und deren Parameter (Dauer, Distanz, Tempo, Intensität) individuell festlegen.
+
+            </p>
+
+
+
+            <!-- 7 Tage Eingabemasken (Montag - Sonntag) -->
+
+            <div id="account-plan-editor-days" class="account-plan-editor-list">
+
+              <!-- Dynamisch via account.js befüllt -->
+
+            </div>
+
+
+
+            <!-- Allgemeiner Wochenfokus / Notiz -->
+
+            <div class="form-group" style="margin-top: 1.5rem;">
+
+              <label for="account-plan-edit-coachnote">
+
+                💬 Wochenfokus / Sonstige Infos für die gesamte Woche (optional)
+
+              </label>
+
+              <textarea id="account-plan-edit-coachnote" rows="2" class="form-textarea"
+
+                placeholder="z. B. Grundlagenwoche mit Fokus auf saubere Trittfrequenz und Erholung."></textarea>
+
+            </div>
+
+
+
+            <!-- Formular-Aktionen unten -->
+
+            <div class="account-form-actions" style="margin-top: 1.5rem;">
+
+              <button type="button" id="account-plan-cancel-btn" class="btn btn-secondary" style="width: auto;">
+
+                Abbrechen
+
+              </button>
+
+              <button type="button" id="account-plan-save-btn" class="btn btn-primary" style="width: auto;">
+
+                💾 Trainingsplan speichern &amp; übernehmen
+
+              </button>
+
+            </div>
+
+          </div>
+
+
+
+        </div>
+
+
+
+      </section>
+
+
+
+      <!-- ════════════════════════════════════════════════════
+
+           REITER 2b: Journal (Kalender, Aktivitäts-Mapping, RPE & Beschwerden)
+
+      ════════════════════════════════════════════════════ -->
+
+      <section id="view-journal" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-journal">
+
+        <div class="card journal-card" aria-labelledby="journal-title">
+
+          <div class="card-header">
+
+            <div class="card-title">
+
+              <span class="icon" aria-hidden="true">📓</span>
+
+              <h3 id="journal-title">Trainings-Journal &amp; Kalender</h3>
+
+            </div>
+
+            <span class="plan-meta text-muted">
+
+              Soll/Ist-Abgleich, Aktivitäts-Mapping, Belastungsempfinden (1–5) &amp; Beschwerden
+
+            </span>
+
+          </div>
+
+
+
+          <div id="journal-content" aria-live="polite">
+
+            <div class="strava-loading-box">
+
+              <div class="spinner"></div>
+
+              <span>Lade Trainings-Journal…</span>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </section>
+
+
+
+      <!-- ════════════════════════════════════════════════════
+
+           REITER 3: KI-Assistenz (Google Gemini Generator & Feedback)
+
+      ════════════════════════════════════════════════════ -->
+
+      <section id="view-ai" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-ai">
+
+
+
+        <!-- KI-Steuerungs-Panel & Analyse-Zeitraum -->
+
+        <div class="card ai-config-card" style="margin-bottom: 1.5rem;">
+
+          <div class="card-header">
+
+            <div class="card-title">
+
+              <span class="icon" aria-hidden="true">🤖</span>
+
+              <h3>KI-Assistenz &amp; Trainingsplan-Generator (Google Gemini)</h3>
+
+            </div>
+
+            <span class="plan-meta text-muted">Intelligente Periodisierung</span>
+
+          </div>
+
+
+
+          <div class="ai-config-body">
+
+            <p class="ai-desc">
+
+              Konfiguriere, wie weit deine Strava-Aktivitäten für die Analyse zurückreichen sollen.
+
+              Gemini analysiert dein Trainingsvolumen, deine Belastungsspitzen und Erholungsphasen aus diesem Zeitraum
+
+              und schlägt dir einen neuen Wochenplan vor oder gibt dir detailliertes Coach-Feedback zu deinem aktuellen Plan.
+
+            </p>
+
+
+
+            <div class="ai-timeframe-toolbar">
+
+              <div class="timeframe-control-group">
+
+                <label for="ai-timeframe-select">Aktivitäten einbeziehen ab:</label>
+
+                <div class="input-inline-group">
+
+                  <select id="ai-timeframe-select" class="form-select">
+
+                    <option value="7">Letzte 7 Tage (1 Woche)</option>
+
+                    <option value="14">Letzte 14 Tage (2 Wochen)</option>
+
+                    <option value="28">Letzte 4 Wochen (28 Tage)</option>
+
+                    <option value="30" selected>Letzte 30 Tage (~1 Monat) [Standard]</option>
+
+                    <option value="60">Letzte 60 Tage (~2 Monate)</option>
+
+                    <option value="90">Letzte 90 Tage (~3 Monate)</option>
+
+                    <option value="custom">Benutzerdefiniert...</option>
+
+                  </select>
+
+
+
+                  <div id="ai-custom-timeframe-box" class="custom-inputs hidden">
+
+                    <input type="number" id="ai-custom-val" min="1" max="365" value="30" class="form-input-sm" />
+
+                    <select id="ai-custom-unit" class="form-select-sm">
+
+                      <option value="days" selected>Tage</option>
+
+                      <option value="weeks">Wochen</option>
+
+                    </select>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+
+
+              <div class="ai-button-group">
+
+                <button type="button" id="ai-feedback-btn" class="btn btn-ai-feedback" aria-label="Trainingsplan von KI analysieren lassen und Feedback einholen">
+
+                  🔍 Plan analysieren &amp; Feedback
+
+                </button>
+
+                <button type="button" id="ai-adjust-btn" class="btn btn-ai" aria-label="Neuen Trainingsplan-Vorschlag von KI generieren lassen">
+
+                  🤖 Plan-Vorschlag generieren
+
+                </button>
+
+              </div>
+
+            </div>
+
+
+
+            <!-- Zusätzliche Hinweise / Wünsche für die KI (Prompt-Ergänzung) -->
+
+            <div class="ai-custom-prompt-box" style="margin-top: 1rem;">
+
+              <label for="ai-user-prompt-input" class="ai-prompt-label">
+
+                💬 Zusätzliche Hinweise oder Wünsche für diese Anfrage (optional):
+
+              </label>
+
+              <textarea id="ai-user-prompt-input" rows="2" class="form-textarea ai-user-prompt-textarea"
+
+                placeholder="z. B. „Diese Woche bin ich Donnerstag & Freitag auf Geschäftsreise (nur Laufen möglich)“, „Bitte eine Regenerationswoche mit reduziertem Umfang planen“ oder „Mehr Fokus auf Kraul-Intervalle“..."></textarea>
+
+            </div>
+
+
+
+            <!-- Vorschau über gefilterte Aktivitäten -->
+
+            <div id="ai-timeframe-info" class="ai-preview-badge">
+
+              Lade Aktivitäts-Vorschau…
+
+            </div>
+
+
+
+            <!-- KI-Statusanzeige -->
+
+            <div id="ai-status" class="hidden" role="status" aria-live="polite"></div>
+
+          </div>
+
+        </div>
+
+
+
+        <!-- ── KI-Feedback & Analyse Card (Dynamisch nach Analyse befüllt) ── -->
+
+        <div id="ai-feedback-card" class="card ai-feedback-card hidden" style="margin-bottom: 1.5rem;" aria-live="polite">
+
+          <div class="card-header ai-feedback-header">
+
+            <div class="card-title">
+
+              <span class="icon" aria-hidden="true">💡</span>
+
+              <h3 id="ai-feedback-title">KI-Analyse &amp; Feedback zum aktuellen Trainingsplan</h3>
+
+            </div>
+
+            <div class="feedback-meta-actions">
+
+              <span id="ai-feedback-meta" class="plan-meta text-muted"></span>
+
+              <button type="button" id="ai-feedback-close-btn" class="feedback-close-btn" aria-label="Feedback schließen">✕</button>
+
+            </div>
+
+          </div>
+
+          <div class="ai-feedback-body" id="ai-feedback-content">
+
+            <!-- Wird per gemini.js befüllt -->
+
+          </div>
+
+        </div>
+
+
+
+        <!-- ── KI-Trainingsplan-Vorschlag Card (wird nach Generierung als Vorschlag angezeigt) ── -->
+
+        <div id="ai-proposal-card" class="card ai-proposal-card hidden" aria-labelledby="plan-title">
+
+          <div class="card-header ai-proposal-header">
+
+            <div class="card-title">
+
+              <span class="icon" aria-hidden="true">✨</span>
+
+              <h3 id="plan-title">Neuer Trainingsplan-Vorschlag von Gemini</h3>
+
+            </div>
+
+            <span id="plan-meta" class="plan-meta" aria-live="polite"></span>
+
+          </div>
+
+
+
+          <!-- Aktionsleiste zum Annehmen oder Ablehnen des Vorschlags -->
+
+          <div class="ai-proposal-decision-bar">
+
+            <div class="proposal-decision-info">
+
+              <strong>Möchtest du diesen KI-Vorschlag übernehmen?</strong>
+
+              <span>Bei Annahme wird dein aktueller Trainingsplan im Reiter <em>Trainingsplan</em> durch diesen Vorschlag überschrieben.</span>
+
+            </div>
+
+            <div class="proposal-decision-buttons">
+
+              <button type="button" id="ai-reject-proposal-btn" class="btn btn-secondary" style="width: auto;">
+
+                ✕ Vorschlag ablehnen
+
+              </button>
+
+              <button type="button" id="ai-accept-proposal-btn" class="btn btn-primary" style="width: auto;">
+
+                ✅ Vorschlag annehmen &amp; Trainingsplan überschreiben
+
+              </button>
+
+            </div>
+
+          </div>
+
+
+
+          <!-- Coach-Notiz (nach KI-Generierung) -->
+
+          <div id="coach-note-box" class="hidden coach-note-banner">
+
+            <strong class="coach-title">💬 Coach-Empfehlung für diesen Vorschlag:</strong>
+
+            <span id="coach-note"></span>
+
+          </div>
+
+
+
+          <!-- 7-Tage-Wochen-Grid des Vorschlags (wird per JS befüllt) -->
+
+          <div id="week-plan-grid" class="week-grid" role="list" aria-label="Vorgeschlagener Wochentrainingsplan" aria-live="polite">
+
+          </div>
+
+        </div>
+
+
+
+        <!-- Platzhalter wenn noch kein Vorschlag oder Feedback offen ist -->
+
+        <div id="ai-empty-hint-card" class="card ai-empty-hint-card">
+
+          <div class="empty-plan-card">
+
+            <span>🤖</span>
+
+            <h3>KI-Coach bereit</h3>
+
+            <p>Wähle oben deinen gewünschten Analyse-Zeitraum und klicke auf <strong>„Plan-Vorschlag generieren“</strong>, um dir einen neuen Wochenplan-Entwurf erstellen zu lassen, oder auf <strong>„Plan analysieren &amp; Feedback“</strong>, um deinen bestehenden Trainingsplan auswerten zu lassen.</p>
+
+          </div>
+
+        </div>
+
+
+
+      </section>
+
+
+
+      <!-- ════════════════════════════════════════════════════
+
+           REITER 3: Hub (Leistungsvergleich & Diagramme)
+
+      ════════════════════════════════════════════════════ -->
+
+      <section id="view-hub" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-hub">
+
+
+
+        <div class="hub-header-bar">
+
+          <div>
+
+            <h2 class="hub-main-title">🏆 TPA IronMan Crew Hub</h2>
+
+            <p class="hub-subtitle">Vergleiche deine Trainingsumfänge, Disziplinen und Fortschritte mit deinen
+
+              Teamkollegen.</p>
+
+          </div>
+
+
+
+          <div class="hub-header-actions">
+
+            <div class="hub-timeframe-control">
+
+              <label for="hub-timeframe-select" class="hub-timeframe-label">
+
+                <span class="hub-timeframe-icon" aria-hidden="true">⏱️</span> Zeitraum:
+
+              </label>
+
+              <select id="hub-timeframe-select" class="form-select hub-timeframe-select" aria-label="Betrachteter Zeitraum für Leistungsvergleich">
+
+                <option value="7d" selected>1 Woche</option>
+
+                <option value="14d">2 Wochen</option>
+
+                <option value="30d">1 Monat</option>
+
+                <option value="60d">2 Monate</option>
+
+                <option value="180d">6 Monate</option>
+
+                <option value="365d">Jahr</option>
+
+              </select>
+
+            </div>
+
+            <button id="hub-refresh-btn" class="btn btn-primary" style="width: auto;">
+
+              🔄 Hub aktualisieren
+
+            </button>
+
+          </div>
+
+        </div>
+
+
+
+        <!-- Dynamischer Inhalt (Podiums, Chart.js Diagramme & Team-Tabelle) -->
+
+        <div id="hub-content">
+
+          <!-- Wird per hub.js befüllt -->
+
+        </div>
+
+      </section>
+
+
+
+      <!-- ════════════════════════════════════════════════════
+
+           REITER 4: Konto & Athleten-Profil
+
+      ════════════════════════════════════════════════════ -->
+
+      <section id="view-account" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-account">
+
+          <div class="card account-card">
+
+
+
+            <div class="card-header">
+
+              <div class="card-title">
+
+                <span class="icon" aria-hidden="true">👤</span>
+
+                <h3>Mein Athleten-Konto &amp; Einstellungen</h3>
+
+              </div>
+
+              <span class="plan-meta text-muted">Profilverwaltung</span>
+
+            </div>
+
+
+
+            <!-- Hero Profile Header -->
+
+            <div class="account-hero">
+
+              <div class="account-avatar-large" id="account-avatar-large">?</div>
+
+              <div class="account-hero-info">
+
+                <h2 id="account-hero-name" class="account-name">Lade Profil…</h2>
+
+                <div id="account-hero-email" class="account-email text-muted">–</div>
+
+                <div class="account-badges">
+
+                  <span class="team-badge">🏊‍♂️🚴‍♂️🏃‍♂️ TPA IronMan Athlet</span>
+
+                  <span id="account-strava-badge" class="strava-status-badge">
+
+                    <span class="badge-status-dot dot-gray"></span>
+
+                    <span>Prüfe Strava-Status…</span>
+
+                  </span>
+
+                </div>
+
+              </div>
+
+            </div>
+
+
+
+            <!-- Formular zur Namensänderung -->
+
+            <form id="account-profile-form" class="account-form">
+
+              <div class="form-group">
+
+                <label for="account-name-input">Athleten-Name / Rufname (wird im Hub angezeigt)</label>
+
+                <input type="text" id="account-name-input" name="name" placeholder="z. B. Jakob Thier" required
+
+                  autocomplete="name" />
+
+                <span class="input-hint">Dieser Name erscheint in der Team-Rangliste, auf den Hub-Podien und in deinen
+
+                  Trainingsplänen.</span>
+
+              </div>
+
+
+
+              <div class="form-group">
+
+                <label for="account-email-input">E-Mail-Adresse (Login-Konto)</label>
+
+                <input type="email" id="account-email-input" name="email" disabled class="input-disabled" />
+
+                <span class="input-hint">E-Mail ist fest mit deiner Firebase-Authentifizierung verknüpft.</span>
+
+              </div>
+
+
+
+              <hr class="account-section-divider" />
+
+
+
+              <!-- ── Sektion 1: Körperdaten & Physiologie ── -->
+
+              <div class="account-section-header">
+
+                <h4>🧬 Körperdaten &amp; Herzfrequenz (für KI-Trainingszonen)</h4>
+
+                <p>Diese Kennwerte helfen der KI, deine individuellen Belastungszonen (GA1/GA2/EB), Watt/kg und deinen Kalorienbedarf präzise zu berechnen.</p>
+
+              </div>
+
+
+
+              <div class="account-metrics-grid">
+
+                <div class="form-group">
+
+                  <label for="account-age-input">🎂 Alter (Jahre)</label>
+
+                  <input type="number" id="account-age-input" min="14" max="100" step="1" placeholder="z. B. 32" />
+
+                </div>
+
+
+
+                <div class="form-group">
+
+                  <label for="account-height-input">📏 Körpergröße (cm)</label>
+
+                  <input type="number" id="account-height-input" min="120" max="230" step="1" placeholder="z. B. 182" />
+
+                </div>
+
+
+
+                <div class="form-group">
+
+                  <label for="account-weight-input">⚖️ Gewicht (kg)</label>
+
+                  <input type="number" id="account-weight-input" min="35" max="200" step="0.1" placeholder="z. B. 76.5" />
+
+                </div>
+
+
+
+                <div class="form-group">
+
+                  <label for="account-resting-hr-input">💤 Ruhepuls (bpm)</label>
+
+                  <input type="number" id="account-resting-hr-input" min="30" max="110" step="1" placeholder="z. B. 48" />
+
+                </div>
+
+
+
+                <div class="form-group">
+
+                  <label for="account-max-hr-input">❤️ Maximalpuls (bpm)</label>
+
+                  <input type="number" id="account-max-hr-input" min="120" max="230" step="1" placeholder="z. B. 192" />
+
+                </div>
+
+
+
+                <div class="form-group">
+
+                  <label for="account-ftp-input">⚡ Rad-FTP / Schwellenleistung (Watt)</label>
+
+                  <input type="number" id="account-ftp-input" min="50" max="600" step="1" placeholder="z. B. 265" />
+
+                </div>
+
+              </div>
+
+
+
+              <hr class="account-section-divider" />
+
+
+
+              <!-- ── Sektion 2: Leistungs-Benchmarks & Triathlon-Ziele ── -->
+
+              <div class="account-section-header">
+
+                <h4>🎯 Triathlon-Erfahrung, Pace-Benchmarks &amp; Wettkampfziel</h4>
+
+                <p>Optionale Angaben für ein noch präziseres Pacing und auf dich zugeschnittene Wochenumfänge der KI-Assistenz.</p>
+
+              </div>
+
+
+
+              <div class="account-metrics-grid">
+
+                <div class="form-group">
+
+                  <label for="account-experience-select">🏅 Erfahrungslevel</label>
+
+                  <select id="account-experience-select" class="form-select">
+
+                    <option value="">– Bitte wählen (optional) –</option>
+
+                    <option value="rookie">Einsteiger / Erster Triathlon</option>
+
+                    <option value="intermediate">Fortgeschritten (Olympisch / 70.3 Erfahrung)</option>
+
+                    <option value="experienced">Erfahrener Langdistanz-Athlet</option>
+
+                    <option value="ambitious">Performance / Altersklassen-Podium</option>
+
+                  </select>
+
+                </div>
+
+
+
+                <div class="form-group">
+
+                  <label for="account-weekly-hours-input">⏱️ Max. Zeitbudget pro Woche (Std.)</label>
+
+                  <input type="number" id="account-weekly-hours-input" min="2" max="35" step="0.5" placeholder="z. B. 12" />
+
+                </div>
+
+
+
+                <div class="form-group">
+
+                  <label for="account-swim-css-input">🏊 Schwimm-Schwelle / CSS (min/100m)</label>
+
+                  <input type="text" id="account-swim-css-input" placeholder="z. B. 1:45" />
+
+                </div>
+
+
+
+                <div class="form-group">
+
+                  <label for="account-run-pace-input">🏃 Lauf-Schwellenpace (min/km)</label>
+
+                  <input type="text" id="account-run-pace-input" placeholder="z. B. 4:35" />
+
+                </div>
+
+
+
+                <div class="form-group">
+
+                  <label for="account-race-date-input">📅 Wettkampfdatum (Hauptziel)</label>
+
+                  <input type="date" id="account-race-date-input" class="form-input-date" />
+
+                </div>
+
+
+
+                <div class="form-group">
+
+                  <label for="account-target-time-input">🏁 Zielzeit (z. B. Sub 10:30 h oder Finish)</label>
+
+                  <input type="text" id="account-target-time-input" placeholder="z. B. 10:45 h / Sicher ins Ziel" />
+
+                </div>
+
+              </div>
+
+
+
+              <div class="form-group" style="margin-top: 0.75rem;">
+
+                <label for="account-injuries-input">🩹 Verletzungshistorie, Schwachstellen oder besondere Hinweise für den KI-Coach</label>
+
+                <textarea id="account-injuries-input" rows="2" class="form-textarea"
+
+                  placeholder="z. B. Empfindliche Achillessehne bei zu schnellen Steigerungen, Fokus auf Kraul-Wasserlage, unter der Woche max. 90 Min. pro Einheit möglich..."></textarea>
+
+                <span class="input-hint">Die KI berücksichtigt diese Hinweise automatisch bei der Erstellung neuer Plan-Vorschläge und im Plan-Feedback.</span>
+
+              </div>
+
+
+
+              <div class="account-form-actions">
+
+                <button type="submit" id="account-save-btn" class="btn btn-primary" style="width: auto;">
+
+                  💾 Profil &amp; Athletendaten speichern
+
+                </button>
+
+              </div>
+
+            </form>
+
+
+
+          </div>
+
+        </section>
+
+
+
+    </main>
+
+
+
+    <!-- ── Footer ───────────────────────────────────────────── -->
+
+    <footer class="dashboard-footer" role="contentinfo">
+
+      <p>TPA IronMan Dashboard &bull; Powered by Firebase, Strava &amp; Gemini AI</p>
+
+    </footer>
+
+
+
+  </div>
+
+
+
+  <!-- ── Onboarding Modal (Erster Login: Namensabfrage) ──────── -->
+
+  <div id="name-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-name-title">
+
+    <div class="modal-card">
+
+      <span class="modal-icon">👋</span>
+
+      <h2 id="modal-name-title">Willkommen im Team!</h2>
+
+      <p class="modal-desc">
+
+        Wie möchtest du im Dashboard und auf dem <strong>Hub-Leaderboard</strong> genannt werden?
+
+      </p>
+
+
+
+      <form id="onboarding-name-form" onsubmit="event.preventDefault(); window.saveOnboardingName();">
+
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+
+          <label for="onboarding-name-input">Dein Athleten-Name / Rufname</label>
+
+          <input type="text" id="onboarding-name-input" placeholder="z. B. Jakob" required autocomplete="name" />
+
+        </div>
+
+
+
+        <button type="submit" id="onboarding-save-btn" class="btn btn-primary">
+
+          🚀 Speichern &amp; Dashboard starten
+
+        </button>
+
+      </form>
+
+    </div>
+
+  </div>
+
+
+
+  <!-- ── Toast-Container ──────────────────────────────────── -->
+
+  <div id="toast-container" aria-live="assertive" aria-atomic="true"></div>
+
+
+
+  <!-- JavaScript Module Entry -->
+
+  <script type="module" src="js/auth.js?v=3.7"></script>
+
+
+
+</body>
+
+
+
 </html>

@@ -9,8 +9,8 @@ import {
   doc, getDoc, setDoc, collection, addDoc, query, orderBy, limit, getDocs,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast } from "./ui-helpers.js";
-import { loadAndRenderHub, publishUserStatsToHub } from "./hub.js?v=3.5";
-import { transferPlanToJournal } from "./journal.js?v=3.5";
+import { loadAndRenderHub, publishUserStatsToHub } from "./hub.js?v=3.7";
+import { transferPlanToJournal } from "./journal.js?v=3.7";
 
 let currentUser = null;
 let currentAccountPlan = null;
@@ -1051,7 +1051,7 @@ function renderDayEditorCard(dayKey) {
               <span class="part-card-hint">Zeitdauer für ${disc.fullLabel}</span>
             </div>
 
-            <div class="day-settings-grid" style="grid-template-columns: minmax(180px, 280px);">
+            <div class="day-settings-grid" class="day-settings-grid day-settings-grid-duration-only">
               <div class="form-group-sm">
                 <label for="input-dur-${dayKey}-${discId}-default">⏱️ Dauer (Min.)</label>
                 <input type="number" id="input-dur-${dayKey}-${discId}-default" class="plan-input part-input-duration"
@@ -1137,7 +1137,7 @@ function renderDayEditorCard(dayKey) {
                 <span class="part-card-hint">Zeitdauer für ${disc.label} (${escapeHtml(stConf.label)})</span>
               </div>
 
-              <div class="day-settings-grid" style="grid-template-columns: minmax(180px, 280px);">
+              <div class="day-settings-grid" class="day-settings-grid day-settings-grid-duration-only">
                 <div class="form-group-sm">
                   <label for="input-dur-${dayKey}-${discId}-${stId}">⏱️ Dauer (Min.)</label>
                   <input type="number" id="input-dur-${dayKey}-${discId}-${stId}" class="plan-input part-input-duration"

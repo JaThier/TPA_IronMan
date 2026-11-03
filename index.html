@@ -19,7 +19,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <!-- CSS -->
-  <link rel="stylesheet" href="css/style.css?v=3.4" />
+  <link rel="stylesheet" href="css/style.css?v=3.5" />
 </head>
 
 <body>
@@ -86,6 +86,9 @@
         </button>
         <button class="nav-tab" data-tab="plan" role="tab" aria-selected="false" id="tab-plan">
           <span class="tab-icon">📋</span> Trainingsplan
+        </button>
+        <button class="nav-tab" data-tab="journal" role="tab" aria-selected="false" id="tab-journal">
+          <span class="tab-icon">📓</span> Journal
         </button>
         <button class="nav-tab" data-tab="ai" role="tab" aria-selected="false" id="tab-ai">
           <span class="tab-icon">🤖</span> KI-Assistenz
@@ -196,6 +199,9 @@
                 <button type="button" id="account-plan-export-cal-btn" class="btn btn-primary btn-sm plan-export-cal-btn" title="Trainingsplan als .ics-Kalenderdatei exportieren (für Handy- &amp; Desktop-Kalender)">
                   <span class="btn-icon">📅</span> <span>Kalender-Export</span>
                 </button>
+                <button type="button" id="account-plan-transfer-journal-btn" class="btn btn-secondary btn-sm plan-transfer-journal-btn" title="Aktuellen Trainingsplan für den gewählten Zeitraum in das Journal übertragen">
+                  <span class="btn-icon">📓</span> <span>Ins Journal übertragen</span>
+                </button>
               </div>
               <button type="button" id="account-plan-toggle-mode-btn" class="btn btn-secondary btn-sm" style="width: auto;">
                 <span class="btn-icon">✏️</span> <span id="account-plan-toggle-text">Plan bearbeiten</span>
@@ -273,6 +279,30 @@
 
         </div>
 
+      </section>
+
+      <!-- ════════════════════════════════════════════════════
+           REITER 2b: Journal (Kalender, Aktivitäts-Mapping, RPE & Beschwerden)
+      ════════════════════════════════════════════════════ -->
+      <section id="view-journal" class="tab-view hidden" role="tabpanel" aria-labelledby="tab-journal">
+        <div class="card journal-card" aria-labelledby="journal-title">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="icon" aria-hidden="true">📓</span>
+              <h3 id="journal-title">Trainings-Journal &amp; Kalender</h3>
+            </div>
+            <span class="plan-meta text-muted">
+              Soll/Ist-Abgleich, Aktivitäts-Mapping, Belastungsempfinden (1–5) &amp; Beschwerden
+            </span>
+          </div>
+
+          <div id="journal-content" aria-live="polite">
+            <div class="strava-loading-box">
+              <div class="spinner"></div>
+              <span>Lade Trainings-Journal…</span>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- ════════════════════════════════════════════════════
@@ -637,7 +667,7 @@
   <div id="toast-container" aria-live="assertive" aria-atomic="true"></div>
 
   <!-- JavaScript Module Entry -->
-  <script type="module" src="js/auth.js?v=3.4"></script>
+  <script type="module" src="js/auth.js?v=3.5"></script>
 
 </body>
 

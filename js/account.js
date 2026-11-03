@@ -9,7 +9,8 @@ import {
   doc, getDoc, setDoc, collection, addDoc, query, orderBy, limit, getDocs,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast } from "./ui-helpers.js";
-import { loadAndRenderHub, publishUserStatsToHub } from "./hub.js?v=3.4";
+import { loadAndRenderHub, publishUserStatsToHub } from "./hub.js?v=3.5";
+import { transferPlanToJournal } from "./journal.js?v=3.5";
 
 let currentUser = null;
 let currentAccountPlan = null;
@@ -1667,6 +1668,34 @@ export function exportAccountPlanToCalendar() {
 }
 
 /**
+ * Überträgt den aktuellen Trainingsplan für die gewählte Wochenanzahl in den Journal-Kalender.
+ */
+async function transferAccountPlanToJournalClick() {
+  const editContainer = document.getElementById("account-plan-edit-container");
+  const isEditorOpen = Boolean(editContainer && !editContainer.classList.contains("hidden"));
+
+  let planToTransfer = null;
+  if (isEditorOpen && Object.keys(editorState).length > 0) {
+    planToTransfer = {
+      weekPlan: compileWeekPlanFromEditorState(),
+      coachNote: document.getElementById("account-plan-edit-coachnote")?.value.trim() || ""
+    };
+  } else if (currentAccountPlan && currentAccountPlan.weekPlan) {
+    planToTransfer = currentAccountPlan;
+  }
+
+  if (!planToTransfer || !planToTransfer.weekPlan) {
+    showToast("Bitte erstelle zuerst einen Trainingsplan, bevor du ihn ins Journal überträgst.", "error");
+    return;
+  }
+
+  const weeksSelect = document.getElementById("account-plan-export-weeks");
+  const weeksCount = Math.max(1, Math.min(52, parseInt(weeksSelect?.value || "4", 10) || 4));
+
+  await transferPlanToJournal(planToTransfer, weeksCount);
+}
+
+/**
  * Event-Listener für Buttons und Delegationen initialisieren.
  */
 let planListenersInitialized = false;
@@ -1681,6 +1710,7 @@ function setupAccountPlanListeners() {
 
   bindClickOnce("account-plan-toggle-mode-btn", toggleAccountPlanMode);
   bindClickOnce("account-plan-export-cal-btn", exportAccountPlanToCalendar);
+  bindClickOnce("account-plan-transfer-journal-btn", transferAccountPlanToJournalClick);
   bindClickOnce("account-plan-save-btn", saveAccountPlan);
   bindClickOnce("account-plan-save-btn-top", saveAccountPlan);
 

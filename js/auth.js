@@ -12,10 +12,11 @@ import {
 import { auth } from "./firebase-config.js";
 import { loadSecrets, clearSecrets } from "./config.js";
 import { showToast } from "./ui-helpers.js";
-import { initStrava, renderAnalysisView } from "./strava.js?v=3.4";
-import { initTrainingPlan, updateActivityCountPreview } from "./gemini.js?v=3.4";
-import { initHub, loadAndRenderHub } from "./hub.js?v=3.4";
-import { initAccount, loadAndRenderAccountPlan } from "./account.js?v=3.4";
+import { initStrava, renderAnalysisView } from "./strava.js?v=3.5";
+import { initTrainingPlan, updateActivityCountPreview } from "./gemini.js?v=3.5";
+import { initHub, loadAndRenderHub } from "./hub.js?v=3.5";
+import { initAccount, loadAndRenderAccountPlan } from "./account.js?v=3.5";
+import { initJournal, loadAndRenderJournal } from "./journal.js?v=3.5";
 
 // ── DOM-Referenzen ─────────────────────────────────────────
 const loginScreen = document.getElementById("login-screen");
@@ -67,10 +68,11 @@ async function initApp(user) {
   initTrainingPlan(user);
   initHub(user);
   initAccount(user);
+  initJournal(user);
 }
 
 // ── Tab-Navigation ─────────────────────────────────────────
-const VALID_TABS = ["activities", "analysis", "plan", "ai", "hub", "account"];
+const VALID_TABS = ["activities", "analysis", "plan", "journal", "ai", "hub", "account"];
 let tabNavInitialized = false;
 
 export function initTabNavigation() {
@@ -122,13 +124,15 @@ export function switchTab(tabName) {
     view.classList.toggle("hidden", !isTarget);
   });
 
-  // Falls zum Hub, Analyse, Plan oder KI-Assistenz gewechselt wird, Daten aktualisieren
+  // Falls zum Hub, Analyse, Plan, Journal oder KI-Assistenz gewechselt wird, Daten aktualisieren
   if (tabName === "hub") {
     loadAndRenderHub?.();
   } else if (tabName === "analysis") {
     renderAnalysisView?.();
   } else if (tabName === "plan") {
     loadAndRenderAccountPlan?.();
+  } else if (tabName === "journal") {
+    loadAndRenderJournal?.();
   } else if (tabName === "ai") {
     updateActivityCountPreview?.();
   }

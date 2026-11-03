@@ -12,6 +12,11 @@ import {
 import { auth } from "./firebase-config.js";
 import { loadSecrets, clearSecrets } from "./config.js";
 import { showToast } from "./ui-helpers.js";
+import { initStrava, renderAnalysisView } from "./strava.js?v=3.5";
+import { initTrainingPlan, updateActivityCountPreview } from "./gemini.js?v=3.5";
+import { initHub, loadAndRenderHub } from "./hub.js?v=3.5";
+import { initAccount, loadAndRenderAccountPlan } from "./account.js?v=3.5";
+import { initJournal, loadAndRenderJournal } from "./journal.js?v=3.5";
 
 // ── DOM-Referenzen ─────────────────────────────────────────
 const loginScreen = document.getElementById("login-screen");
@@ -58,16 +63,17 @@ async function initApp(user) {
   showDashboard(user);
   initTabNavigation();
 
-  // Feature-Module dynamisch laden (Cache-Busting für Entwicklungsstand)
-  const cb = Date.now();
-  import(`./strava.js?cb=${cb}`).then((m) => m.initStrava(user));
-  import(`./gemini.js?cb=${cb}`).then((m) => m.initTrainingPlan(user));
-  import(`./hub.js?cb=${cb}`).then((m) => m.initHub(user));
-  import(`./account.js?cb=${cb}`).then((m) => m.initAccount(user));
+  // Feature-Module initialisieren (statische ES-Module-Singletons)
+  initStrava(user);
+  initTrainingPlan(user);
+  initHub(user);
+  initAccount(user);
+  initJournal(user);
 }
 
 // ── Tab-Navigation ─────────────────────────────────────────
-const VALID_TABS = ["activities", "plan", "ai", "hub", "account"];
+const VALID_TABS = ["activities", "analysis", "plan", "journal", "ai", "hub", "account"];
+let tabNavInitialized = false;
 
 export function initTabNavigation() {
   const tabs = document.querySelectorAll(".nav-tab");
@@ -79,6 +85,9 @@ export function initTabNavigation() {
   } else {
     switchTab("activities");
   }
+
+  if (tabNavInitialized) return;
+  tabNavInitialized = true;
 
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => {
@@ -115,14 +124,17 @@ export function switchTab(tabName) {
     view.classList.toggle("hidden", !isTarget);
   });
 
-  // Falls zum Hub, Plan, KI-Assistenz oder Konto gewechselt wird, Daten aktualisieren
-  const cb = Date.now();
+  // Falls zum Hub, Analyse, Plan, Journal oder KI-Assistenz gewechselt wird, Daten aktualisieren
   if (tabName === "hub") {
-    import(`./hub.js?cb=${cb}`).then(m => m.loadAndRenderHub());
+    loadAndRenderHub?.();
+  } else if (tabName === "analysis") {
+    renderAnalysisView?.();
   } else if (tabName === "plan") {
-    import(`./account.js?cb=${cb}`).then(m => m.loadAndRenderAccountPlan?.());
+    loadAndRenderAccountPlan?.();
+  } else if (tabName === "journal") {
+    loadAndRenderJournal?.();
   } else if (tabName === "ai") {
-    import(`./gemini.js?cb=${cb}`).then(m => m.updateActivityCountPreview?.());
+    updateActivityCountPreview?.();
   }
 }
 

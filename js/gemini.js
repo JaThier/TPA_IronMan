@@ -9,6 +9,7 @@ import {
   doc, getDoc, setDoc, collection, addDoc, query, orderBy, limit, getDocs,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast }       from "./ui-helpers.js";
+import { getJournalContextForAI } from "./journal.js?v=3.5";
 
 // ── Gemini-Konstanten & Modell-Prioritäten ──────────────────
 const PREFERRED_MODELS = [
@@ -195,10 +196,14 @@ export async function updateActivityCountPreview() {
     });
 
     const totalKm = matchingActs.reduce((s, a) => s + (parseFloat(a.distance) || 0), 0) / 1000;
+    const journalCtx = await getJournalContextForAI(aiTimeframeDays);
+    const journalInfoStr = journalCtx.entriesCount > 0
+      ? ` • <strong>${journalCtx.entriesCount} Journal-Einträge</strong> (${journalCtx.feedbackCount} mit Feedback/RPE${journalCtx.complaintsCount > 0 ? `, ⚠️ ${journalCtx.complaintsCount}× Beschwerden` : ""})`
+      : "";
 
     infoEl.innerHTML = `
       🔍 Es werden <strong>${matchingActs.length} Aktivitäten</strong> seit dem <strong>${cutoffDateStr}</strong> 
-      (Gesamt: ${totalKm.toFixed(1)} km) in die KI-Planung einbezogen.
+      (Gesamt: ${totalKm.toFixed(1)} km)${journalInfoStr} in die KI-Planung einbezogen.
     `;
   } catch (err) {
     console.error("[gemini] Fehler beim Berechnen der Aktivitäts-Vorschau:", err);
@@ -362,7 +367,8 @@ async function adjustPlanWithAI() {
     // 2. Athleten-Profil, benutzerdefinierte Hinweise & gefilterte Aktivitäten in den Prompt einbinden
     const athleteMetrics = await loadAthleteProfileMetrics();
     const customUserPrompt = document.getElementById("ai-user-prompt-input")?.value?.trim() || "";
-    const prompt = buildPrompt(currentPlan, filteredActs, aiTimeframeDays, athleteMetrics, customUserPrompt);
+    const journalCtx = await getJournalContextForAI(aiTimeframeDays);
+    const prompt = buildPrompt(currentPlan, filteredActs, aiTimeframeDays, athleteMetrics, customUserPrompt, journalCtx.promptText);
 
     // 3. Gemini API aufrufen
     showAiStatus("🧠 Gemini erstellt deinen personalisierten Trainingsplan-Vorschlag…");
@@ -486,7 +492,8 @@ async function analyzePlanWithAI() {
     // 2. Prompt für Feedback bauen (inkl. Athleten-Profil & benutzerdefinierter Hinweise)
     const athleteMetrics = await loadAthleteProfileMetrics();
     const customUserPrompt = document.getElementById("ai-user-prompt-input")?.value?.trim() || "";
-    const prompt = buildFeedbackPrompt(currentPlan, filteredActs, aiTimeframeDays, athleteMetrics, customUserPrompt);
+    const journalCtx = await getJournalContextForAI(aiTimeframeDays);
+    const prompt = buildFeedbackPrompt(currentPlan, filteredActs, aiTimeframeDays, athleteMetrics, customUserPrompt, journalCtx.promptText);
 
     // 3. Gemini API aufrufen
     showAiStatus("🧠 Gemini Headcoach wertet deinen Plan aus und formuliert Feedback…");
@@ -630,7 +637,7 @@ Auszug jüngster Einheiten:
 ${listExcerpt}`;
 }
 
-function buildFeedbackPrompt(currentPlan, activities, timeframeDays, athleteMetrics = {}, customUserPrompt = "") {
+function buildFeedbackPrompt(currentPlan, activities, timeframeDays, athleteMetrics = {}, customUserPrompt = "", journalContextStr = "") {
   const planSummary = formatPlanForFeedbackPrompt(currentPlan);
   const actsSummary = formatActivitiesForFeedbackPrompt(activities, timeframeDays);
   const profileSummary = formatAthleteProfileForPrompt(athleteMetrics);
@@ -651,6 +658,10 @@ Ironman-Vorbereitung (3,8 km Schwimmen, 180 km Radfahren, 42,2 km Laufen).
 ## Persönliches Athleten-Profil & Physiologie
 ${profileSummary}
 ${userPromptSection}
+## 📓 Trainings-Journal des Athleten (Soll/Ist-Abgleich, Subjektives Belastungsempfinden RPE 1-5 & Beschwerden)
+WICHTIG: Berücksichtige in deiner Analyse dringend, wie schwer sich die Einheiten für den Athleten angefühlt haben (Skala 1-5) und ob Beschwerden/Schmerzen im Journal dokumentiert wurden! Gehe bei dokumentierten Beschwerden oder dauerhaft hohem RPE (4-5) explizit in den Risiken/Warnungen und Handlungsempfehlungen darauf ein:
+${journalContextStr || "Keine Journal-Einträge vorhanden."}
+
 ## Trainingshistorie des Athleten (letzte ${timeframeDays} Tage)
 ${actsSummary}
 
@@ -854,7 +865,7 @@ function renderPlanFeedback(feedback, timeframeDays, activitiesCount) {
 }
 
 // ── Prompt-Builder ─────────────────────────────────────────
-function buildPrompt(currentPlan, activities, timeframeDays, athleteMetrics = {}, customUserPrompt = "") {
+function buildPrompt(currentPlan, activities, timeframeDays, athleteMetrics = {}, customUserPrompt = "", journalContextStr = "") {
   const cutoffDate = new Date(Date.now() - (timeframeDays * 24 * 3600 * 1000));
   const dateStr = cutoffDate.toLocaleDateString("de-DE");
 
@@ -906,6 +917,15 @@ ${actsSummary}
 ## Bisheriger Trainingsplan
 ${currentPlanStr}
 ${lockedSection}${userPromptSection}
+## 📓 TRAININGS-JOURNAL DES ATHLETEN (SOLL/IST-ABGLEICH, BELASTUNGSEMPFINDEN RPE 1-5 & BESCHWERDEN – SEHR WICHTIG!)
+Im Trainings-Journal dokumentiert der Athlet zugeordnete Einheiten, wie schwer sich die Aktivitäten angefühlt haben (RPE-Skala 1 bis 5) sowie aufgetretene körperliche Beschwerden/Schmerzen.
+Steuere Umfang, Intensität und Disziplinen des neuen Plans zwingend anhand dieser Journal-Einträge (z. B. Entlastung/Schonung bei dokumentierten Beschwerden wie Knie-/Achillessehnen-/Schulterproblemen oder bei sehr hohem RPE 4-5; gehe in der \`coachNote\` explizit auf das Journal-Feedback ein!):
+${journalContextStr || "Keine Journal-Einträge vorhanden."}
+
+## 📓 Trainings-Journal des Athleten (Soll/Ist-Abgleich, Subjektives Belastungsempfinden RPE 1-5 & Beschwerden)
+WICHTIG: Berücksichtige in deiner Analyse dringend, wie schwer sich die Einheiten für den Athleten angefühlt haben (Skala 1-5) und ob Beschwerden/Schmerzen im Journal dokumentiert wurden! Gehe bei dokumentierten Beschwerden oder dauerhaft hohem RPE (4-5) explizit in den Risiken/Warnungen und Handlungsempfehlungen darauf ein:
+${journalContextStr || "Keine Journal-Einträge vorhanden."}
+
 ## Trainingsphilosophie für den Ironman
 1. **Belastungssteuerung & Erholung**: Mindestens 1 echter Ruhetag pro Woche (z. B. Montag). Ruhetage dienen der Superkompensation.
 2. **Triathlon-Spezifik**: Am Wochenende ist mindestens 1 Koppeleinheit (Brick: Radfahren gefolgt von einem Koppellauf) oder ein langer Lauf (Longrun) einzuplanen.

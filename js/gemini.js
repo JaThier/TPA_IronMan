@@ -9,7 +9,7 @@ import {
   doc, getDoc, setDoc, collection, addDoc, query, orderBy, limit, getDocs,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast }       from "./ui-helpers.js";
-import { getJournalContextForAI } from "./journal.js?v=3.5";
+import { getJournalContextForAI } from "./journal.js?v=3.7";
 
 // ── Gemini-Konstanten & Modell-Prioritäten ──────────────────
 const PREFERRED_MODELS = [

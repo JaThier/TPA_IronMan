@@ -1,213 +1,538 @@
 // ============================================================
+
 // js/auth.js
+
 // Firebase Authentication – Login, Logout, Auth-State & Tab-Navigation
+
 // ============================================================
 
+
+
 import {
+
   signInWithEmailAndPassword,
+
   signOut,
+
   onAuthStateChanged,
+
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js";
 
+
+
 import { auth } from "./firebase-config.js";
+
 import { loadSecrets, clearSecrets } from "./config.js";
+
 import { showToast } from "./ui-helpers.js";
-import { initStrava, renderAnalysisView } from "./strava.js?v=3.5";
-import { initTrainingPlan, updateActivityCountPreview } from "./gemini.js?v=3.5";
-import { initHub, loadAndRenderHub } from "./hub.js?v=3.5";
-import { initAccount, loadAndRenderAccountPlan } from "./account.js?v=3.5";
-import { initJournal, loadAndRenderJournal } from "./journal.js?v=3.5";
+
+import { initStrava, renderAnalysisView } from "./strava.js?v=3.7";
+
+import { initTrainingPlan, updateActivityCountPreview } from "./gemini.js?v=3.7";
+
+import { initHub, loadAndRenderHub } from "./hub.js?v=3.7";
+
+import { initAccount, loadAndRenderAccountPlan } from "./account.js?v=3.7";
+
+import { initJournal, loadAndRenderJournal } from "./journal.js?v=3.7";
+
+
 
 // ── DOM-Referenzen ─────────────────────────────────────────
+
 const loginScreen = document.getElementById("login-screen");
+
 const dashboard = document.getElementById("dashboard");
+
 const loginForm = document.getElementById("login-form");
+
 const loginError = document.getElementById("login-error");
+
 const loginBtn = document.getElementById("login-btn");
+
 const logoutBtn = document.getElementById("logout-btn");
+
 const userEmailEl = document.getElementById("user-email");
+
 const userAvatarEl = document.getElementById("user-avatar");
+
+
 
 let currentTab = "activities";
 
+
+
 // ── Auth-State-Listener ────────────────────────────────────
+
 onAuthStateChanged(auth, async (user) => {
+
   if (user) {
+
     // ✅ Eingeloggt – zuerst Secrets laden, dann Dashboard zeigen
+
     await initApp(user);
+
   } else {
+
     // 🔒 Nicht eingeloggt
+
     clearSecrets();
+
     showLoginScreen();
+
   }
+
 });
+
+
 
 /**
+
  * Wird nach erfolgreichem Login aufgerufen.
+
  * @param {import("firebase/auth").User} user
+
  */
+
 async function initApp(user) {
+
   setLoginLoading(true);
 
+
+
   try {
+
     await loadSecrets();
+
   } catch (err) {
+
     console.error("[auth] Fehler beim Laden der Secrets:", err);
+
     showToast(
+
       "⚠️ Secrets konnten nicht geladen werden. Prüfe config/secrets in Firestore.",
+
       "error",
+
       8000
+
     );
+
   }
+
+
 
   showDashboard(user);
+
   initTabNavigation();
 
+
+
   // Feature-Module initialisieren (statische ES-Module-Singletons)
+
   initStrava(user);
+
   initTrainingPlan(user);
+
   initHub(user);
+
   initAccount(user);
+
   initJournal(user);
+
 }
+
+
 
 // ── Tab-Navigation ─────────────────────────────────────────
+
 const VALID_TABS = ["activities", "analysis", "plan", "journal", "ai", "hub", "account"];
+
 let tabNavInitialized = false;
 
+
+
 export function initTabNavigation() {
+
   const tabs = document.querySelectorAll(".nav-tab");
 
-  // URL Hash auswerten (z.B. #plan, #ai, #hub, #account)
+  const dropdowns = document.querySelectorAll(".nav-dropdown");
+
+
+
+  // Dropdown-Trigger Klick-Listener (Toggle & Outside-Click Handling)
+
+  dropdowns.forEach((dd) => {
+
+    const trigger = dd.querySelector(".nav-dropdown-trigger");
+
+    trigger?.addEventListener("click", (e) => {
+
+      e.stopPropagation();
+
+      const isOpen = dd.classList.contains("is-open");
+
+      dropdowns.forEach((other) => {
+
+        if (other !== dd) {
+
+          other.classList.remove("is-open");
+
+          other.querySelector(".nav-dropdown-trigger")?.setAttribute("aria-expanded", "false");
+
+        }
+
+      });
+
+      dd.classList.toggle("is-open", !isOpen);
+
+      trigger.setAttribute("aria-expanded", !isOpen ? "true" : "false");
+
+    });
+
+  });
+
+
+
+  // Klick außerhalb schließt offene Dropdowns
+
+  document.addEventListener("click", (e) => {
+
+    if (!e.target.closest(".nav-dropdown")) {
+
+      dropdowns.forEach((dd) => {
+
+        dd.classList.remove("is-open");
+
+        dd.querySelector(".nav-dropdown-trigger")?.setAttribute("aria-expanded", "false");
+
+      });
+
+    }
+
+  });
+
+
+
+  // Escape-Taste schließt Dropdowns
+
+  document.addEventListener("keydown", (e) => {
+
+    if (e.key === "Escape") {
+
+      dropdowns.forEach((dd) => {
+
+        dd.classList.remove("is-open");
+
+        dd.querySelector(".nav-dropdown-trigger")?.setAttribute("aria-expanded", "false");
+
+      });
+
+    }
+
+  });
+
+
+
+  // URL Hash auswerten (z.B. #plan, #ai, #hub, #account, #activities, #analysis, #journal)
+
   const initialHash = window.location.hash.replace("#", "");
+
   if (VALID_TABS.includes(initialHash)) {
+
     switchTab(initialHash);
+
   } else {
+
     switchTab("activities");
+
   }
+
+
 
   if (tabNavInitialized) return;
+
   tabNavInitialized = true;
 
+
+
   tabs.forEach((tab) => {
+
+    // Dropdown-Trigger selbst besitzen kein data-tab und schalten Tabs nicht direkt
+
+    if (!tab.dataset.tab) return;
+
+
+
     tab.addEventListener("click", () => {
+
       const target = tab.dataset.tab;
+
       if (target) {
+
         switchTab(target);
+
         window.location.hash = target;
+
       }
+
     });
+
   });
+
+
 
   window.addEventListener("hashchange", () => {
+
     const hash = window.location.hash.replace("#", "");
+
     if (VALID_TABS.includes(hash) && hash !== currentTab) {
+
       switchTab(hash);
+
     }
+
   });
+
 }
+
+
 
 export function switchTab(tabName) {
+
   currentTab = tabName;
+
   const tabs = document.querySelectorAll(".nav-tab");
+
   const views = document.querySelectorAll(".tab-view");
 
+  const dropdowns = document.querySelectorAll(".nav-dropdown");
+
+
+
   tabs.forEach((tab) => {
+
+    if (!tab.dataset.tab) return;
+
     const isTarget = tab.dataset.tab === tabName;
+
     tab.classList.toggle("active", isTarget);
+
     tab.setAttribute("aria-selected", isTarget ? "true" : "false");
+
   });
+
+
+
+  // Dropdown-Trigger hervorheben, falls ein darin liegender Kind-Tab aktiv ist
+
+  dropdowns.forEach((dd) => {
+
+    const trigger = dd.querySelector(".nav-dropdown-trigger");
+
+    const hasActiveChild = Boolean(dd.querySelector(`.nav-tab[data-tab="${tabName}"]`));
+
+    if (trigger) {
+
+      trigger.classList.toggle("active", hasActiveChild);
+
+      trigger.setAttribute("aria-selected", hasActiveChild ? "true" : "false");
+
+    }
+
+    // Nach Tab-Auswahl Dropdown schließen
+
+    dd.classList.remove("is-open");
+
+    trigger?.setAttribute("aria-expanded", "false");
+
+  });
+
+
 
   views.forEach((view) => {
+
     const isTarget = view.id === `view-${tabName}`;
+
     view.classList.toggle("active", isTarget);
+
     view.classList.toggle("hidden", !isTarget);
+
   });
 
+
+
   // Falls zum Hub, Analyse, Plan, Journal oder KI-Assistenz gewechselt wird, Daten aktualisieren
+
   if (tabName === "hub") {
+
     loadAndRenderHub?.();
+
   } else if (tabName === "analysis") {
+
     renderAnalysisView?.();
+
   } else if (tabName === "plan") {
+
     loadAndRenderAccountPlan?.();
+
   } else if (tabName === "journal") {
+
     loadAndRenderJournal?.();
+
   } else if (tabName === "ai") {
+
     updateActivityCountPreview?.();
+
   }
+
 }
+
+
 
 // ── Login-Formular absenden ────────────────────────────────
+
 loginForm?.addEventListener("submit", async (e) => {
+
   e.preventDefault();
 
+
+
   const email = document.getElementById("login-email").value.trim();
+
   const password = document.getElementById("login-password").value;
 
+
+
   setLoginLoading(true);
+
   hideLoginError();
 
+
+
   try {
+
     await signInWithEmailAndPassword(auth, email, password);
+
   } catch (err) {
+
     setLoginLoading(false);
+
     showLoginError(getReadableAuthError(err.code));
+
   }
+
 });
+
+
 
 // ── Logout ─────────────────────────────────────────────────
+
 logoutBtn?.addEventListener("click", async () => {
+
   try {
+
     await signOut(auth);
+
     showToast("Erfolgreich ausgeloggt.", "info");
+
   } catch (err) {
+
     console.error("Logout-Fehler:", err);
+
     showToast("Logout fehlgeschlagen.", "error");
+
   }
+
 });
 
+
+
 // ── Hilfsfunktionen ────────────────────────────────────────
+
 function showDashboard(user) {
+
   loginScreen.classList.add("hidden");
+
   dashboard.classList.remove("hidden");
+
   setLoginLoading(false);
+
+
 
   if (userEmailEl) userEmailEl.textContent = user.email;
+
   if (userAvatarEl) userAvatarEl.textContent = user.email.charAt(0).toUpperCase();
+
 }
+
+
 
 function showLoginScreen() {
+
   dashboard.classList.add("hidden");
+
   loginScreen.classList.remove("hidden");
+
   setLoginLoading(false);
+
 }
+
+
 
 function setLoginLoading(loading) {
+
   if (!loginBtn) return;
+
   loginBtn.disabled = loading;
+
   loginBtn.textContent = loading ? "Einloggen…" : "Einloggen";
+
 }
+
+
 
 function showLoginError(message) {
+
   if (!loginError) return;
+
   loginError.textContent = message;
+
   loginError.classList.remove("hidden");
+
 }
+
+
 
 function hideLoginError() {
+
   loginError?.classList.add("hidden");
+
 }
 
+
+
 function getReadableAuthError(code) {
+
   const errors = {
+
     "auth/invalid-email": "Ungültige E-Mail-Adresse.",
+
     "auth/user-disabled": "Dieses Konto wurde deaktiviert.",
+
     "auth/user-not-found": "Kein Konto mit dieser E-Mail gefunden.",
+
     "auth/wrong-password": "Falsches Passwort.",
+
     "auth/invalid-credential": "E-Mail oder Passwort falsch.",
+
     "auth/too-many-requests": "Zu viele Versuche. Bitte später nochmal.",
+
     "auth/network-request-failed": "Netzwerkfehler. Prüfe deine Verbindung.",
+
   };
+
   return errors[code] ?? `Login-Fehler (${code}). Bitte versuche es erneut.`;
+
 }
+

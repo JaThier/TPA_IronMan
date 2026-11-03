@@ -9,7 +9,7 @@ import {
   doc, getDoc, setDoc, collection, addDoc, query, orderBy, limit, getDocs,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast } from "./ui-helpers.js";
-import { loadAndRenderHub, publishUserStatsToHub } from "./hub.js?v=2.8";
+import { loadAndRenderHub, publishUserStatsToHub } from "./hub.js?v=3.3";
 
 let currentUser = null;
 let currentAccountPlan = null;

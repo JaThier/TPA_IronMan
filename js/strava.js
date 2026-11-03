@@ -9,7 +9,7 @@ import {
   doc, getDoc, setDoc,
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { showToast } from "./ui-helpers.js";
-import { publishUserStatsToHub } from "./hub.js?v=2.8";
+import { publishUserStatsToHub } from "./hub.js?v=3.3";
 
 // ── Strava-Konstanten ──────────────────────────────────────
 const STRAVA_REDIRECT_URI = window.location.origin + window.location.pathname;
@@ -892,29 +892,26 @@ function getActivityAvgHr(a) {
  * Gibt null zurück, falls nur die Durchschnittswerte vorliegen.
  */
 function extractProfileFromData(activity, streamsData = null, detailData = null) {
-  // 1. Aus Streams (time + velocity_smooth / distance / watts / heartrate / moving)
+  // 1. Aus Streams (time + velocity_smooth / distance / watts / heartrate)
   const timeStream = streamsData?.time?.data || (Array.isArray(streamsData) ? streamsData.find(s => s.type === "time")?.data : null);
   const velStream = streamsData?.velocity_smooth?.data || (Array.isArray(streamsData) ? streamsData.find(s => s.type === "velocity_smooth")?.data : null);
   const distStream = streamsData?.distance?.data || (Array.isArray(streamsData) ? streamsData.find(s => s.type === "distance")?.data : null);
   const wattsStream = streamsData?.watts?.data || (Array.isArray(streamsData) ? streamsData.find(s => s.type === "watts")?.data : null);
   const hrStream = streamsData?.heartrate?.data || (Array.isArray(streamsData) ? streamsData.find(s => s.type === "heartrate")?.data : null);
-  const movingStream = streamsData?.moving?.data || (Array.isArray(streamsData) ? streamsData.find(s => s.type === "moving")?.data : null);
 
   const hasAnyMetricStream = Array.isArray(velStream) || Array.isArray(distStream) || Array.isArray(wattsStream) || Array.isArray(hrStream);
 
   if (Array.isArray(timeStream) && timeStream.length > 1 && hasAnyMetricStream) {
     const rawPoints = [];
-    let cumActiveSec = 0;
+    let cumMovingSec = 0;
 
     for (let i = 0; i < timeStream.length; i++) {
       if (i > 0) {
-        const rawDt = Math.max(0, (timeStream[i] || 0) - (timeStream[i - 1] || 0));
-        const isMoving = Array.isArray(movingStream) ? Boolean(movingStream[i]) : true;
-        // Lange Standpausen (z. B. Uhr pausiert / Ampelstopp) aus der aktiven Bewegungszeit herausfiltern
-        const activeDt = isMoving ? Math.min(rawDt, 30) : 0;
-        cumActiveSec += activeDt;
+        const dt = Math.max(0, (timeStream[i] || 0) - (timeStream[i - 1] || 0));
+        // Uhr-Pausen (Zeitsprünge > 10 Sek. ohne Aufzeichnung im Stream) herausfiltern,
+        // damit keine mehrminütigen Lücken auf der Zeitachse entstehen.
+        cumMovingSec += dt <= 10 ? dt : 1;
       }
-
       let kmh = null;
       if (Array.isArray(velStream) && velStream[i] != null) {
         kmh = Math.max(0, velStream[i] * 3.6);
@@ -929,55 +926,63 @@ function extractProfileFromData(activity, streamsData = null, detailData = null)
       const watts = Array.isArray(wattsStream) && wattsStream[i] != null ? Math.max(0, parseFloat(wattsStream[i])) : null;
       const hr = Array.isArray(hrStream) && hrStream[i] != null && hrStream[i] > 0 ? parseFloat(hrStream[i]) : null;
 
-      rawPoints.push({ sec: cumActiveSec, kmh, watts, hr });
+      rawPoints.push({ sec: cumMovingSec, min: cumMovingSec / 60, kmh, watts, hr });
     }
 
-    // Zeitachse auf die tatsächliche Bewegungsdauer (moving_time) normieren, falls vorhanden
-    const targetDurSec = parseFloat(activity?.moving_time) || parseFloat(activity?.elapsed_time) || cumActiveSec;
-    const scaleRatio = (cumActiveSec > 0 && targetDurSec > 0) ? (targetDurSec / cumActiveSec) : 1;
+    // Auf die aktive Bewegungszeit (moving_time) normieren
+    const movingDurSec = parseFloat(activity?.moving_time) || cumMovingSec;
+    const scaleRatio = (cumMovingSec > 0 && movingDurSec > 0) ? (movingDurSec / cumMovingSec) : 1;
     rawPoints.forEach(p => {
       p.min = (p.sec * scaleRatio) / 60;
     });
 
-    // Einheitliches 0,5-Minuten-Zeitraster (0, 0.5, 1.0, 1.5, ...) OHNE Mittelung über Zeit-Buckets:
-    // Zu jedem Zeitpunkt tMin wird direkt der Momentanwert an diesem Zeitpunkt abgegriffen.
-    const totalDurationMin = Math.max(1, Math.round(((targetDurSec || 60) / 60) * 2) / 2);
-    const timeStepMin = 0.5;
-    const sampled = [];
-    let cursor = 0;
-
-    const pickValueAtMin = (tMin, field) => {
-      // Nächstliegenden / interpolierten Momentanwert zum Zeitpunkt tMin ermitteln (keine Bucket-Mittelung über die Zeit)
-      const p0 = rawPoints[cursor];
-      const p1 = rawPoints[Math.min(rawPoints.length - 1, cursor + 1)];
-      const v0 = p0?.[field];
-      const v1 = p1?.[field];
-      if (typeof v0 === "number" && !isNaN(v0) && typeof v1 === "number" && !isNaN(v1)) {
-        const span = p1.min - p0.min;
-        if (span > 0 && tMin >= p0.min && tMin <= p1.min) {
-          const ratio = (tMin - p0.min) / span;
-          return v0 + ratio * (v1 - v0);
+    const avgBucketField = (arr, startIdx, endIdx, field) => {
+      let sum = 0;
+      let count = 0;
+      for (let j = startIdx; j < endIdx; j++) {
+        const v = arr[j][field];
+        if (typeof v === "number" && !isNaN(v)) {
+          sum += v;
+          count++;
         }
       }
-      if (typeof v0 === "number" && !isNaN(v0)) return v0;
-      if (typeof v1 === "number" && !isNaN(v1)) return v1;
-      return null;
+      return count > 0 ? Math.round((sum / count) * 100) / 100 : null;
     };
 
-    for (let t = 0; t <= totalDurationMin + 1e-6; t += timeStepMin) {
-      const tMin = Math.round(t * 10) / 10;
-      while (cursor < rawPoints.length - 2 && rawPoints[cursor + 1].min <= tMin) {
-        cursor++;
-      }
-      const kmhVal = pickValueAtMin(tMin, "kmh");
-      const wattsVal = pickValueAtMin(tMin, "watts");
-      const hrVal = pickValueAtMin(tMin, "hr");
-
+    // Genau so viele Zeitabschnitte (Stützpunkte) wie Minuten der Aktivität
+    const totalDurationMin = rawPoints.length > 0
+      ? rawPoints[rawPoints.length - 1].min
+      : ((parseFloat(activity?.moving_time) || parseFloat(activity?.elapsed_time) || 0) / 60);
+    const targetBuckets = Math.max(1, Math.round(totalDurationMin));
+    if (rawPoints.length <= targetBuckets) {
+      return rawPoints.map(p => ({
+        min: Math.round(p.min * 10) / 10,
+        kmh: p.kmh != null ? Math.round(p.kmh * 100) / 100 : null,
+        watts: p.watts != null ? Math.round(p.watts * 10) / 10 : null,
+        hr: p.hr != null ? Math.round(p.hr * 10) / 10 : null,
+      }));
+    }
+    const step = rawPoints.length / targetBuckets;
+    const sampled = [];
+    for (let b = 0; b < targetBuckets; b++) {
+      const startIdx = Math.floor(b * step);
+      const endIdx = Math.min(rawPoints.length, Math.floor((b + 1) * step));
+      if (endIdx <= startIdx) continue;
+      const midMin = rawPoints[Math.floor((startIdx + endIdx - 1) / 2)].min;
       sampled.push({
-        min: tMin,
-        kmh: kmhVal != null ? Math.round(kmhVal * 100) / 100 : null,
-        watts: wattsVal != null ? Math.round(wattsVal * 10) / 10 : null,
-        hr: hrVal != null ? Math.round(hrVal * 10) / 10 : null,
+        min: Math.round(midMin * 10) / 10,
+        kmh: avgBucketField(rawPoints, startIdx, endIdx, "kmh"),
+        watts: avgBucketField(rawPoints, startIdx, endIdx, "watts"),
+        hr: avgBucketField(rawPoints, startIdx, endIdx, "hr"),
+      });
+    }
+    // Startpunkt bei 0 Min ergänzen, falls nötig
+    if (sampled.length > 0 && sampled[0].min > 0) {
+      sampled.unshift({
+        min: 0,
+        kmh: sampled[0].kmh,
+        watts: sampled[0].watts,
+        hr: sampled[0].hr,
       });
     }
     return sampled;
@@ -2114,23 +2119,24 @@ function drawAnalysisCombinedChart(selectedActs, paceMode, overallAvgKmh, overal
 
   const getActEndMin = (a) => {
     const prof = activitySpeedProfileCache.get(Number(a.id));
-    const durMin = Math.max(1, Math.round((((parseFloat(a.moving_time) || parseFloat(a.elapsed_time) || 60) / 60)) * 2) / 2);
+    const durMin = Math.max(1, Math.round((parseFloat(a.moving_time) || parseFloat(a.elapsed_time) || 60) / 60));
     if (Array.isArray(prof) && prof.length > 1) {
       return prof[prof.length - 1].min || durMin;
     }
     return durMin;
   };
 
-  // Identisches 0,5-Minuten-Zeitraster wie im Aktivitäten-Tab verwenden
+  // Bei 1 ausgewählter Aktivität exakt die Stützpunkte ihres Profils nutzen,
+  // bei mehreren Aktivitäten genau so viele Zeitabschnitte wie Minuten der Maximaldauer verwenden.
   let timePointsMin = [];
   if (actsWithProfile.length === 1 && selectedActs.length === 1) {
     const singleProf = activitySpeedProfileCache.get(Number(actsWithProfile[0].id));
     timePointsMin = singleProf.map(p => p.min);
   } else {
-    const maxDurationMin = Math.max(1, ...selectedActs.map(getActEndMin));
-    const stepMin = 0.5;
-    for (let t = 0; t <= maxDurationMin + 1e-6; t += stepMin) {
-      timePointsMin.push(Math.round(t * 10) / 10);
+    const maxDurationMin = Math.max(1, Math.round(Math.max(...selectedActs.map(getActEndMin))));
+    const steps = maxDurationMin;
+    for (let i = 0; i <= steps; i++) {
+      timePointsMin.push(Math.round(((i / steps) * maxDurationMin) * 10) / 10);
     }
   }
 

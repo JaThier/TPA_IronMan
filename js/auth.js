@@ -12,10 +12,10 @@ import {
 import { auth } from "./firebase-config.js";
 import { loadSecrets, clearSecrets } from "./config.js";
 import { showToast } from "./ui-helpers.js";
-import { initStrava, renderAnalysisView } from "./strava.js?v=2.8";
-import { initTrainingPlan, updateActivityCountPreview } from "./gemini.js?v=2.8";
-import { initHub, loadAndRenderHub } from "./hub.js?v=2.8";
-import { initAccount, loadAndRenderAccountPlan } from "./account.js?v=2.8";
+import { initStrava, renderAnalysisView } from "./strava.js?v=3.3";
+import { initTrainingPlan, updateActivityCountPreview } from "./gemini.js?v=3.3";
+import { initHub, loadAndRenderHub } from "./hub.js?v=3.3";
+import { initAccount, loadAndRenderAccountPlan } from "./account.js?v=3.3";
 
 // ── DOM-Referenzen ─────────────────────────────────────────
 const loginScreen = document.getElementById("login-screen");

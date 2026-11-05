@@ -9216,3 +9216,73 @@ canvas {
     max-width: 80px !important;
   }
 }
+
+
+
+/* ── Diagramm Zoom Controls & Hints ────────────────────────── */
+.detail-chart-title {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: flex-start !important;
+  flex-wrap: wrap !important;
+  gap: 0.65rem !important;
+  margin-bottom: 1rem !important;
+}
+
+.detail-chart-title-left {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.25rem !important;
+  flex: 1 !important;
+  min-width: 0 !important;
+}
+
+.chart-zoom-hint {
+  font-size: 0.72rem !important;
+  color: var(--clr-text-muted) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.35rem !important;
+  flex-wrap: wrap !important;
+  margin-top: 0.25rem !important;
+  line-height: 1.35 !important;
+}
+
+.chart-zoom-hint kbd {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 4px !important;
+  padding: 0.1rem 0.35rem !important;
+  font-size: 0.65rem !important;
+  font-family: inherit !important;
+  color: var(--clr-text) !important;
+}
+
+.btn-chart-reset-zoom {
+  background: rgba(232, 57, 30, 0.15) !important;
+  border: 1px solid rgba(232, 57, 30, 0.45) !important;
+  color: #ff8a7a !important;
+  border-radius: 99px !important;
+  padding: 0.32rem 0.75rem !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  font-family: var(--font-body) !important;
+  cursor: pointer !important;
+  transition: var(--transition) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.35rem !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+}
+
+.btn-chart-reset-zoom:hover {
+  background: var(--clr-accent) !important;
+  color: #fff !important;
+  border-color: var(--clr-accent) !important;
+  box-shadow: 0 0 10px var(--clr-accent-glow) !important;
+}
+
+.btn-chart-reset-zoom.hidden {
+  display: none !important;
+}

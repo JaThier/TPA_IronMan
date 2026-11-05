@@ -1705,11 +1705,16 @@ function renderSelectedActivityDetail() {
       <div class="detail-chart-section">
 
         <div class="detail-chart-title">
-
-          <span id="activity-chart-main-title">📈 ${isBike(activity) ? 'Leistungs- &amp; Herzfrequenzverlauf' : (isRun(activity) ? 'Pace- &amp; Herzfrequenzverlauf' : 'Geschwindigkeits- &amp; Herzfrequenzverlauf')} dieser Einheit</span>
-
-          <span class="chart-subtitle" id="activity-chart-subtitle">Verlauf über die Dauer &amp; Vergleich mit gleichen Einheiten</span>
-
+          <div class="detail-chart-title-left">
+            <span id="activity-chart-main-title">📈 ${isBike(activity) ? 'Leistungs- &amp; Herzfrequenzverlauf' : (isRun(activity) ? 'Pace- &amp; Herzfrequenzverlauf' : 'Geschwindigkeits- &amp; Herzfrequenzverlauf')} dieser Einheit</span>
+            <span class="chart-subtitle" id="activity-chart-subtitle">Verlauf über die Dauer &amp; Vergleich mit gleichen Einheiten</span>
+            <span class="chart-zoom-hint" title="Zoomen: Strg+Scroll (vertikal), Alt+Scroll (horizontal), Pinch auf dem Smartphone, Doppelklick zum Zurücksetzen">
+              🔍 Zoom: <kbd>Strg</kbd>+Scroll (↕ Vertikal) &bull; <kbd>Alt</kbd>+Scroll (↔ Horizontal) &bull; 📱 Pinch
+            </span>
+          </div>
+          <button type="button" class="btn-chart-reset-zoom hidden" id="btn-activity-chart-reset-zoom" title="Zoom auf 100% zurücksetzen">
+            ↺ Zoom zurücksetzen
+          </button>
         </div>
 
         <div class="detail-chart-wrapper">
@@ -3076,6 +3081,44 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
 
       plugins: {
 
+        zoom: {
+          limits: {
+            x: { min: "original", max: "original" },
+            y: { min: "original", max: "original" },
+            ...(showHrAxis ? { yHr: { min: "original", max: "original" } } : {})
+          },
+          zoom: {
+            wheel: {
+              enabled: true,
+              speed: 0.08,
+              modifierKey: null
+            },
+            pinch: {
+              enabled: true
+            },
+            mode: ({ chart }) => chart._activeZoomMode || "xy",
+            onZoomStart: ({ chart, event }) => {
+              const srcEvt = event?.native || event;
+              if (srcEvt && (srcEvt.type === "wheel" || srcEvt.deltaY !== undefined)) {
+                if (!srcEvt.ctrlKey && !srcEvt.altKey) {
+                  return false;
+                }
+              }
+              return true;
+            },
+            onZoomComplete: ({ chart }) => {
+              updateChartResetButton("btn-activity-chart-reset-zoom", chart);
+            }
+          },
+          pan: {
+            enabled: !("ontouchstart" in window),
+            mode: ({ chart }) => chart._activeZoomMode === "x" ? "x" : (chart._activeZoomMode === "y" ? "y" : "xy"),
+            onPanComplete: ({ chart }) => {
+              updateChartResetButton("btn-activity-chart-reset-zoom", chart);
+            }
+          }
+        },
+
         legend: {
 
           labels: { color: "#94a3b8", font: { family: "Inter", size: 11 } }
@@ -3129,6 +3172,8 @@ function drawActivityProfileChart(activity, profile, sameTypeActs, typeLabel, du
     }
 
   });
+
+  setupChartZoomInteractions(detailChartInstance, ctx.canvas, 'btn-activity-chart-reset-zoom');
 
 }
 
@@ -4107,19 +4152,20 @@ function renderAnalysisDetail() {
       <div class="detail-chart-section">
 
         <div class="detail-chart-title">
-
-          <span id="analysis-chart-main-title">
-
-            📈 ${effectivePaceMode ? 'Pace- &amp; Herzfrequenzschnitt' : 'Geschwindigkeits- &amp; Herzfrequenzschnitt'} (${count} ${count === 1 ? 'Einheit' : 'Einheiten'})
-
-          </span>
-
-          <span class="chart-subtitle" id="analysis-chart-subtitle">
-
-            Berechne kombinierten Verlauf über die Dauer…
-
-          </span>
-
+          <div class="detail-chart-title-left">
+            <span id="analysis-chart-main-title">
+              📈 ${effectivePaceMode ? 'Pace- &amp; Herzfrequenzschnitt' : 'Geschwindigkeits- &amp; Herzfrequenzschnitt'} (${count} ${count === 1 ? 'Einheit' : 'Einheiten'})
+            </span>
+            <span class="chart-subtitle" id="analysis-chart-subtitle">
+              Berechne kombinierten Verlauf über die Dauer…
+            </span>
+            <span class="chart-zoom-hint" title="Zoomen: Strg+Scroll (vertikal), Alt+Scroll (horizontal), Pinch auf dem Smartphone, Doppelklick zum Zurücksetzen">
+              🔍 Zoom: <kbd>Strg</kbd>+Scroll (↕ Vertikal) &bull; <kbd>Alt</kbd>+Scroll (↔ Horizontal) &bull; 📱 Pinch
+            </span>
+          </div>
+          <button type="button" class="btn-chart-reset-zoom hidden" id="btn-analysis-chart-reset-zoom" title="Zoom auf 100% zurücksetzen">
+            ↺ Zoom zurücksetzen
+          </button>
         </div>
 
         <div class="detail-chart-wrapper">
@@ -4790,6 +4836,44 @@ function drawAnalysisCombinedChart(selectedActs, paceMode, overallAvgKmh, overal
 
       plugins: {
 
+        zoom: {
+          limits: {
+            x: { min: "original", max: "original" },
+            y: { min: "original", max: "original" },
+            ...(hasHr ? { yHr: { min: "original", max: "original" } } : {})
+          },
+          zoom: {
+            wheel: {
+              enabled: true,
+              speed: 0.08,
+              modifierKey: null
+            },
+            pinch: {
+              enabled: true
+            },
+            mode: ({ chart }) => chart._activeZoomMode || "xy",
+            onZoomStart: ({ chart, event }) => {
+              const srcEvt = event?.native || event;
+              if (srcEvt && (srcEvt.type === "wheel" || srcEvt.deltaY !== undefined)) {
+                if (!srcEvt.ctrlKey && !srcEvt.altKey) {
+                  return false;
+                }
+              }
+              return true;
+            },
+            onZoomComplete: ({ chart }) => {
+              updateChartResetButton("btn-analysis-chart-reset-zoom", chart);
+            }
+          },
+          pan: {
+            enabled: !("ontouchstart" in window),
+            mode: ({ chart }) => chart._activeZoomMode === "x" ? "x" : (chart._activeZoomMode === "y" ? "y" : "xy"),
+            onPanComplete: ({ chart }) => {
+              updateChartResetButton("btn-analysis-chart-reset-zoom", chart);
+            }
+          }
+        },
+
         legend: {
 
           labels: { color: "#94a3b8", font: { family: "Inter", size: 11 } }
@@ -4848,6 +4932,8 @@ function drawAnalysisCombinedChart(selectedActs, paceMode, overallAvgKmh, overal
 
   });
 
+  setupChartZoomInteractions(analysisChartInstance, ctx.canvas, 'btn-analysis-chart-reset-zoom');
+
 }
 
 
@@ -4876,3 +4962,61 @@ export function getStravaTokens() {
 
 }
 
+
+
+// ════════════════════════════════════════════════════════════
+// ZOOM-INTERAKTIONEN & RESET-STEUERUNG FÜR DIAGRAMME
+// ════════════════════════════════════════════════════════════
+
+function updateChartResetButton(btnId, chart) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  const isZoomed = typeof chart?.isZoomedOrPanned === "function" ? chart.isZoomedOrPanned() : false;
+  if (isZoomed) {
+    btn.classList.remove("hidden");
+  } else {
+    btn.classList.add("hidden");
+  }
+}
+
+function setupChartZoomInteractions(chart, canvas, resetBtnId) {
+  if (!chart || !canvas) return;
+
+  const resetBtn = document.getElementById(resetBtnId);
+  if (resetBtn) {
+    resetBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (typeof chart.resetZoom === "function") {
+        chart.resetZoom();
+      }
+      updateChartResetButton(resetBtnId, chart);
+    };
+  }
+
+  // Wheel capture: Alt+Scroll -> 'x' (horizontal), Strg+Scroll -> 'y' (vertikal)
+  canvas.addEventListener("wheel", (e) => {
+    if (e.altKey) {
+      chart._activeZoomMode = "x";
+      if (e.cancelable) e.preventDefault();
+    } else if (e.ctrlKey) {
+      chart._activeZoomMode = "y";
+      if (e.cancelable) e.preventDefault();
+    } else {
+      chart._activeZoomMode = "xy";
+    }
+  }, { capture: true, passive: false });
+
+  // Touchstart: Zoom-Modus auf 'xy' (Finger-Richtung beim Pinch entscheidet automatisch)
+  canvas.addEventListener("touchstart", () => {
+    chart._activeZoomMode = "xy";
+  }, { passive: true });
+
+  // Doppelklick setzt den Zoom zurück
+  canvas.addEventListener("dblclick", (e) => {
+    e.stopPropagation();
+    if (typeof chart.resetZoom === "function") {
+      chart.resetZoom();
+    }
+    updateChartResetButton(resetBtnId, chart);
+  });
+}

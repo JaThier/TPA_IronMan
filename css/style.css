@@ -8549,12 +8549,12 @@ canvas {
     inset: 0 !important;
     width: 100vw !important;
     height: 100vh !important;
+    height: 100dvh !important;
     z-index: 10000 !important;
     background: rgba(10, 12, 18, 0.84) !important;
     backdrop-filter: blur(10px) !important;
-    padding: 1rem 0.75rem !important;
-    overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch !important;
+    padding: 0.75rem 0.5rem 0 !important;
+    overflow: hidden !important;
     align-items: flex-end;
     justify-content: center;
     box-sizing: border-box;
@@ -8568,14 +8568,16 @@ canvas {
   #activity-detail-container.mobile-overlay-open .detail-card {
     width: 100% !important;
     max-width: 720px !important;
-    max-height: 88vh !important;
+    max-height: 92vh !important;
+    max-height: 92dvh !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
-    border-radius: var(--radius-xl) var(--radius-xl) var(--radius-md) var(--radius-md) !important;
+    overscroll-behavior: contain !important;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0 !important;
     box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.75), 0 0 28px rgba(232, 57, 30, 0.35) !important;
     animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     margin: 0 auto;
-    padding: 1.25rem 1rem !important;
+    padding: 1.25rem 1rem calc(2.5rem + env(safe-area-inset-bottom, 16px)) !important;
     border: 1px solid rgba(255, 255, 255, 0.15) !important;
     background: var(--clr-surface) !important;
   }
@@ -8597,12 +8599,12 @@ canvas {
     inset: 0 !important;
     width: 100vw !important;
     height: 100vh !important;
+    height: 100dvh !important;
     z-index: 10000 !important;
     background: rgba(10, 12, 18, 0.84) !important;
     backdrop-filter: blur(10px) !important;
-    padding: 1rem 0.75rem !important;
-    overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch !important;
+    padding: 0.75rem 0.5rem 0 !important;
+    overflow: hidden !important;
     align-items: flex-end;
     justify-content: center;
     box-sizing: border-box;
@@ -8616,16 +8618,39 @@ canvas {
   #journal-detail-panel.mobile-overlay-open .journal-detail-card {
     width: 100% !important;
     max-width: 720px !important;
-    max-height: 88vh !important;
+    max-height: 92vh !important;
+    max-height: 92dvh !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
-    border-radius: var(--radius-xl) var(--radius-xl) var(--radius-md) var(--radius-md) !important;
+    overscroll-behavior: contain !important;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0 !important;
     box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.75), 0 0 28px rgba(232, 57, 30, 0.35) !important;
     animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     margin: 0 auto;
-    padding: 1.25rem 1rem !important;
+    padding: 1.25rem 1rem calc(2.75rem + env(safe-area-inset-bottom, 20px)) !important;
     border: 1px solid rgba(255, 255, 255, 0.15) !important;
     background: var(--clr-surface) !important;
+  }
+
+  #journal-detail-panel.mobile-overlay-open .journal-detail-card > * {
+    flex-shrink: 0 !important;
+  }
+
+  .journal-detail-actions {
+    flex-wrap: wrap !important;
+    padding-bottom: 0.5rem !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .journal-detail-actions {
+    flex-direction: column-reverse !important;
+    align-items: stretch !important;
+  }
+
+  .journal-detail-actions .btn {
+    width: 100% !important;
+    justify-content: center !important;
   }
 }
 

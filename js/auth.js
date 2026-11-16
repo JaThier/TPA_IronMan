@@ -26,15 +26,15 @@ import { loadSecrets, clearSecrets } from "./config.js";
 
 import { showToast } from "./ui-helpers.js";
 
-import { initStrava, renderAnalysisView } from "./strava.js?v=4.1";
+import { initStrava, renderAnalysisView } from "./strava.js?v=4.3";
 
-import { initTrainingPlan, updateActivityCountPreview } from "./gemini.js?v=4.1";
+import { initTrainingPlan, updateActivityCountPreview } from "./gemini.js?v=4.3";
 
-import { initHub, loadAndRenderHub } from "./hub.js?v=4.1";
+import { initHub, loadAndRenderHub } from "./hub.js?v=4.3";
 
-import { initAccount, loadAndRenderAccountPlan } from "./account.js?v=4.1";
+import { initAccount, loadAndRenderAccountPlan } from "./account.js?v=4.3";
 
-import { initJournal, loadAndRenderJournal } from "./journal.js?v=4.1";
+import { initJournal, loadAndRenderJournal } from "./journal.js?v=4.3";
 
 
 

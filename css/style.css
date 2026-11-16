@@ -9311,3 +9311,77 @@ canvas {
 .btn-chart-reset-zoom.hidden {
   display: none !important;
 }
+
+/* ── Trainingsplan Editor: Drag & Drop für Tage ───────────── */
+.day-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 0.25rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--clr-text-muted);
+  font-size: 0.95rem;
+  letter-spacing: -1px;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  transition: var(--transition);
+}
+
+.day-drag-handle:hover {
+  background: rgba(232, 57, 30, 0.15);
+  border-color: rgba(232, 57, 30, 0.45);
+  color: var(--clr-text);
+}
+
+.day-drag-handle:active {
+  cursor: grabbing;
+}
+
+.plan-day-editor-card.is-drag-source {
+  opacity: 0.48;
+  border-style: dashed;
+  border-color: rgba(232, 57, 30, 0.55);
+  transform: scale(0.99);
+}
+
+.plan-day-editor-card.is-drag-over {
+  border-color: var(--clr-accent) !important;
+  background: rgba(232, 57, 30, 0.08) !important;
+  box-shadow: 0 0 0 2px rgba(232, 57, 30, 0.35), 0 8px 24px rgba(232, 57, 30, 0.22) !important;
+}
+
+.plan-day-editor-card.is-swapped-flash {
+  animation: daySwapFlash 0.65s ease-out;
+}
+
+@keyframes daySwapFlash {
+  0% {
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.7), 0 0 24px rgba(34, 197, 94, 0.4);
+    border-color: #22c55e;
+  }
+  100% {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    border-color: var(--clr-border);
+  }
+}
+
+.day-drag-touch-ghost {
+  position: fixed;
+  transform: translate(-50%, -130%);
+  z-index: 12000;
+  pointer-events: none;
+  background: var(--clr-accent);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.45rem 0.85rem;
+  border-radius: 99px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px var(--clr-accent-glow);
+  white-space: nowrap;
+}

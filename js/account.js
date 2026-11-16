@@ -1201,6 +1201,9 @@ function renderDayEditorCard(dayKey) {
     <div class="plan-day-editor-card ${isLocked ? 'is-locked' : ''}" id="editor-day-${dayKey}" data-day="${dayKey}">
       <div class="day-editor-header">
         <div class="day-editor-title">
+          <span class="day-drag-handle" draggable="true" data-day="${dayKey}"
+            title="Ziehen, um den Inhalt dieses Tages mit einem anderen Tag zu tauschen"
+            aria-label="${dayConf.full} per Drag &amp; Drop verschieben">⋮⋮</span>
           <span class="day-short-badge">${dayConf.short}</span>
           <h4>${dayConf.full}</h4>
         </div>
@@ -1930,6 +1933,8 @@ function setupAccountPlanListeners() {
         return;
       }
     });
+
+    setupPlanDragAndDrop(editorList);
   }
 
   // Synchronisation bei externen Updates (z. B. durch KI-Generierung im Plan-Tab)
@@ -1988,6 +1993,189 @@ function escapeHtml(str) {
   return (str || "").toString().replace(/[&<>"']/g, (m) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   }[m]));
+}
+
+/**
+ * Tauscht den Trainingsinhalt zweier Wochentage im Editor-Zustand und aktualisiert beide Karten.
+ */
+function swapEditorDays(sourceDay, targetDay) {
+  if (!sourceDay || !targetDay || sourceDay === targetDay) return;
+  if (!editorState[sourceDay] || !editorState[targetDay]) return;
+
+  const clone = (obj) => JSON.parse(JSON.stringify(obj));
+  const temp = clone(editorState[sourceDay]);
+  editorState[sourceDay] = clone(editorState[targetDay]);
+  editorState[targetDay] = temp;
+
+  updateDayEditorCard(sourceDay);
+  updateDayEditorCard(targetDay);
+
+  [sourceDay, targetDay].forEach((dKey) => {
+    const el = document.getElementById("editor-day-" + dKey);
+    if (el) {
+      el.classList.add("is-swapped-flash");
+      setTimeout(() => el.classList.remove("is-swapped-flash"), 650);
+    }
+  });
+
+  const srcName = PLAN_WEEKDAY_CONFIG[sourceDay]?.full || sourceDay;
+  const tgtName = PLAN_WEEKDAY_CONFIG[targetDay]?.full || targetDay;
+  showToast(`⇄ Inhalte von ${srcName} und ${tgtName} getauscht.`, "info");
+}
+
+/**
+ * Aktiviert Drag & Drop (Maus + Touch) über das Drag-Handle zum Tauschen von Tagen im Editor.
+ */
+function setupPlanDragAndDrop(editorList) {
+  if (!editorList) return;
+
+  let dragSourceDay = null;
+  let touchSourceDay = null;
+  let touchGhostEl = null;
+  let lastTouchTargetDay = null;
+
+  const clearDragHighlights = () => {
+    editorList.querySelectorAll(".plan-day-editor-card").forEach((card) => {
+      card.classList.remove("is-drag-source", "is-drag-over");
+    });
+  };
+
+  const setDropTarget = (targetCard, sourceDay) => {
+    editorList.querySelectorAll(".plan-day-editor-card.is-drag-over").forEach((card) => {
+      if (card !== targetCard) card.classList.remove("is-drag-over");
+    });
+    if (targetCard && targetCard.dataset.day && targetCard.dataset.day !== sourceDay) {
+      targetCard.classList.add("is-drag-over");
+      return targetCard.dataset.day;
+    }
+    return null;
+  };
+
+  // ── Desktop HTML5 Drag & Drop ────────────────────────────
+  editorList.addEventListener("dragstart", (e) => {
+    const handle = e.target.closest(".day-drag-handle");
+    if (!handle) {
+      e.preventDefault();
+      return;
+    }
+    dragSourceDay = handle.dataset.day;
+    if (!dragSourceDay) return;
+
+    const card = document.getElementById("editor-day-" + dragSourceDay);
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", dragSourceDay);
+      if (card && typeof e.dataTransfer.setDragImage === "function") {
+        e.dataTransfer.setDragImage(card, 28, 28);
+      }
+    }
+    if (card) {
+      requestAnimationFrame(() => card.classList.add("is-drag-source"));
+    }
+  });
+
+  editorList.addEventListener("dragover", (e) => {
+    if (!dragSourceDay) return;
+    const targetCard = e.target.closest(".plan-day-editor-card");
+    if (!targetCard) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    setDropTarget(targetCard, dragSourceDay);
+  });
+
+  editorList.addEventListener("dragleave", (e) => {
+    if (!dragSourceDay) return;
+    const targetCard = e.target.closest(".plan-day-editor-card");
+    if (targetCard && (!e.relatedTarget || !targetCard.contains(e.relatedTarget))) {
+      targetCard.classList.remove("is-drag-over");
+    }
+  });
+
+  editorList.addEventListener("drop", (e) => {
+    if (!dragSourceDay) return;
+    e.preventDefault();
+    const targetCard = e.target.closest(".plan-day-editor-card");
+    const sourceDay = dragSourceDay || e.dataTransfer?.getData("text/plain");
+    const targetDay = targetCard?.dataset.day;
+    clearDragHighlights();
+    dragSourceDay = null;
+    if (sourceDay && targetDay && sourceDay !== targetDay) {
+      swapEditorDays(sourceDay, targetDay);
+    }
+  });
+
+  editorList.addEventListener("dragend", () => {
+    clearDragHighlights();
+    dragSourceDay = null;
+  });
+
+  // ── Mobile Touch Drag & Drop über das Handle ─────────────
+  const removeTouchGhost = () => {
+    if (touchGhostEl && touchGhostEl.parentNode) {
+      touchGhostEl.parentNode.removeChild(touchGhostEl);
+    }
+    touchGhostEl = null;
+  };
+
+  editorList.addEventListener("touchstart", (e) => {
+    const handle = e.target.closest(".day-drag-handle");
+    if (!handle || e.touches.length !== 1) return;
+
+    e.preventDefault();
+    touchSourceDay = handle.dataset.day;
+    lastTouchTargetDay = null;
+    if (!touchSourceDay) return;
+
+    const card = document.getElementById("editor-day-" + touchSourceDay);
+    if (card) card.classList.add("is-drag-source");
+
+    const touch = e.touches[0];
+    const dayLabel = PLAN_WEEKDAY_CONFIG[touchSourceDay]?.full || touchSourceDay;
+    touchGhostEl = document.createElement("div");
+    touchGhostEl.className = "day-drag-touch-ghost";
+    touchGhostEl.textContent = `⇄ ${dayLabel} tauschen…`;
+    touchGhostEl.style.left = `${touch.clientX}px`;
+    touchGhostEl.style.top = `${touch.clientY}px`;
+    document.body.appendChild(touchGhostEl);
+  }, { passive: false });
+
+  document.addEventListener("touchmove", (e) => {
+    if (!touchSourceDay || e.touches.length !== 1) return;
+    e.preventDefault();
+
+    const touch = e.touches[0];
+    if (touchGhostEl) {
+      touchGhostEl.style.left = `${touch.clientX}px`;
+      touchGhostEl.style.top = `${touch.clientY}px`;
+    }
+
+    // Sanftes Auto-Scrollen am oberen/unteren Bildschirmrand
+    if (touch.clientY < 85) {
+      window.scrollBy(0, -10);
+    } else if (touch.clientY > window.innerHeight - 85) {
+      window.scrollBy(0, 10);
+    }
+
+    const underEl = document.elementFromPoint(touch.clientX, touch.clientY);
+    const targetCard = underEl?.closest?.(".plan-day-editor-card") || null;
+    lastTouchTargetDay = setDropTarget(targetCard, touchSourceDay);
+  }, { passive: false });
+
+  const finishTouchDrag = () => {
+    if (!touchSourceDay) return;
+    const src = touchSourceDay;
+    const tgt = lastTouchTargetDay;
+    touchSourceDay = null;
+    lastTouchTargetDay = null;
+    removeTouchGhost();
+    clearDragHighlights();
+    if (src && tgt && src !== tgt) {
+      swapEditorDays(src, tgt);
+    }
+  };
+
+  document.addEventListener("touchend", finishTouchDrag);
+  document.addEventListener("touchcancel", finishTouchDrag);
 }
 
 
